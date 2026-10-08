@@ -83,6 +83,7 @@ import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundPro
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceBitmap;
 import org.telegram.ui.Components.blur3.utils.Blur3Utils;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
+import org.telegram.ui.Components.poll.PollUtils;
 import org.telegram.ui.Components.poll.RecentVotersCell;
 
 import java.util.ArrayList;
@@ -269,7 +270,7 @@ public class PollItemMenu extends Dialog {
         ViewCompat.setOnApplyWindowInsetsListener(windowView, new OnApplyWindowInsetsListener() {
             @Override
             public @NonNull WindowInsetsCompat onApplyWindowInsets(@NonNull View v, @NonNull WindowInsetsCompat i) {
-                insets = i.getInsets(WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.systemBars());
+                insets = i.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars());
                 containerView.setPadding(insets.left, insets.top, insets.right, insets.bottom);
                 windowView.requestLayout();
 
@@ -293,17 +294,15 @@ public class PollItemMenu extends Dialog {
         params.dimAmount = 0;
         params.flags &= ~WindowManager.LayoutParams.FLAG_DIM_BEHIND;
         params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
-        params.flags &=~ WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
         params.flags |= WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
                 | WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR
                 | WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
                 | WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION
                 | WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS
                 | WindowManager.LayoutParams.FLAG_FULLSCREEN
                 | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
-        if (Build.VERSION.SDK_INT >= 28) {
-            params.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-        }
+        AndroidUtilities.applyEdgeToEdgeLayoutParams(params);
         window.setAttributes(params);
 
         windowView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_FULLSCREEN);
@@ -524,7 +523,7 @@ public class PollItemMenu extends Dialog {
                         }
                         dismiss(true);
                     });
-                } else {
+                } else if (PollUtils.getVoteRestrictedFlags(messageObject) == 0) {
                     taskOptions.add(R.drawable.msg_select, LocaleController.getString(R.string.PollSubmitVotesNoCaps), () -> {
                         if (!allowMultiple) {
                             ArrayList<TLRPC.PollAnswer> answers = new ArrayList<>(1);
@@ -566,7 +565,7 @@ public class PollItemMenu extends Dialog {
                 final long currentTime = ConnectionsManager.getInstance(messageObject.currentAccount).getCurrentTime();
                 final long deadlineTime = task.date + MessagesController.getInstance(messageObject.currentAccount).config.pollAnswerDeletePeriod.get(TimeUnit.SECONDS);
 
-                if (!messageObject.isForwarded() && (media.poll.creator || dialogId == selfId && currentTime < deadlineTime)) {
+                if (!messageObject.isForwarded() && !media.poll.closed && (media.poll.creator || dialogId == selfId && currentTime < deadlineTime)) {
                     taskOptions.add(R.drawable.msg_delete, getString(R.string.Delete), true, () -> {
                         SendMessagesHelper.getInstance(messageObject.currentAccount).deletePollOption(messageObject, taskId);
                         dismiss(true);

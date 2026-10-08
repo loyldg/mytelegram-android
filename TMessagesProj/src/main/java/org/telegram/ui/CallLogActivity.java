@@ -53,11 +53,13 @@ import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_phone;
+import org.telegram.tgnet.tl.TL_update;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BackDrawable;
+import org.telegram.messenger.AccountInstance;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
@@ -65,7 +67,6 @@ import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Cells.CheckBoxCell;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.LoadingCell;
-import org.telegram.ui.Cells.LocationCell;
 import org.telegram.ui.Cells.ProfileSearchCell;
 import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
@@ -915,8 +916,8 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 				topPanelLayout.setViewVisible(fragmentContextViewWrapper, visibility == VISIBLE);
 			}
 		};
-		fragmentContextView.isInsideBubble = true;
 		fragmentContextViewWrapper.addView(fragmentContextView);
+		topPanelLayout.setCallFragmentContextView(fragmentContextView);
 		contentView.addView(topPanelLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP, 0, -14, 0, 0));
 		contentView.addView(actionBar);
 
@@ -1194,7 +1195,7 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 		getConnectionsManager().sendRequest(req, (response, error) -> {
 			if (response != null) {
 				TLRPC.TL_messages_affectedFoundMessages res = (TLRPC.TL_messages_affectedFoundMessages) response;
-				TLRPC.TL_updateDeleteMessages updateDeleteMessages = new TLRPC.TL_updateDeleteMessages();
+				TL_update.TL_updateDeleteMessages updateDeleteMessages = new TL_update.TL_updateDeleteMessages();
 				updateDeleteMessages.messages = res.messages;
 				updateDeleteMessages.pts = res.pts;
 				updateDeleteMessages.pts_count = res.pts_count;
@@ -1886,41 +1887,46 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 	}
 
 	private void openCreateCall() {
+		openCreateCall(this);
+	}
+
+	public static void openCreateCall(BaseFragment parent) {
 		Bundle args = new Bundle();
 		args.putBoolean("isCall", true);
+		final int account = parent.getCurrentAccount();
 		final GroupCreateActivity fragment = new GroupCreateActivity(args) {
 			@Override
 			protected void onCallUsersSelected(HashSet<Long> users, boolean video) {
 				if (users.size() == 1) {
-					final TLRPC.User user = getMessagesController().getUser(users.iterator().next());
-					TLRPC.UserFull userFull = getMessagesController().getUserFull(user.id);
+					final TLRPC.User user = MessagesController.getInstance(account).getUser(users.iterator().next());
+					TLRPC.UserFull userFull = MessagesController.getInstance(account).getUserFull(user.id);
 					if (userFull == null) {
 						final TLRPC.TL_users_getFullUser req = new TLRPC.TL_users_getFullUser();
-						req.id = getMessagesController().getInputUser(user.id);
-						getConnectionsManager().sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
+						req.id = MessagesController.getInstance(account).getInputUser(user.id);
+						ConnectionsManager.getInstance(account).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
 							TLRPC.UserFull newUserFull = null;
 							if (res instanceof TLRPC.TL_users_userFull) {
 								final TLRPC.TL_users_userFull r = (TLRPC.TL_users_userFull) res;
-								MessagesController.getInstance(CallLogActivity.this.currentAccount).putUsers(r.users, false);
-								MessagesController.getInstance(CallLogActivity.this.currentAccount).putChats(r.chats, false);
+								MessagesController.getInstance(account).putUsers(r.users, false);
+								MessagesController.getInstance(account).putChats(r.chats, false);
 								newUserFull = r.full_user;
 							}
-							VoIPHelper.startCall(lastCallUser = user, video, newUserFull != null && newUserFull.video_calls_available, getParentActivity(), newUserFull, getAccountInstance());
+							VoIPHelper.startCall(user, video, newUserFull != null && newUserFull.video_calls_available, getParentActivity(), newUserFull, AccountInstance.getInstance(account));
 						}));
 						return;
 					}
-					VoIPHelper.startCall(lastCallUser = user, video, userFull != null && userFull.video_calls_available, getParentActivity(), userFull, getAccountInstance());
+					VoIPHelper.startCall(user, video, userFull != null && userFull.video_calls_available, getParentActivity(), userFull, AccountInstance.getInstance(account));
 				} else {
 					final TL_phone.createConferenceCall req = new TL_phone.createConferenceCall();
 					req.random_id = Utilities.random.nextInt();
-					ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
+					ConnectionsManager.getInstance(account).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
 						if (res instanceof TLRPC.Updates) {
 							final TLRPC.Updates updates = (TLRPC.Updates) res;
-							MessagesController.getInstance(currentAccount).putUsers(updates.users, false);
-							MessagesController.getInstance(currentAccount).putChats(updates.chats, false);
+							MessagesController.getInstance(account).putUsers(updates.users, false);
+							MessagesController.getInstance(account).putChats(updates.chats, false);
 
 							TLRPC.GroupCall groupCall = null;
-							for (TLRPC.TL_updateGroupCall u : findUpdatesAndRemove(updates, TLRPC.TL_updateGroupCall.class)) {
+							for (TL_update.TL_updateGroupCall u : findUpdatesAndRemove(updates, TL_update.TL_updateGroupCall.class)) {
 								groupCall = u.call;
 							}
 
@@ -1931,21 +1937,21 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 								final TLRPC.TL_inputGroupCall inputGroupCall = new TLRPC.TL_inputGroupCall();
 								inputGroupCall.id = groupCall.id;
 								inputGroupCall.access_hash = groupCall.access_hash;
-								VoIPHelper.joinConference(LaunchActivity.instance, currentAccount, inputGroupCall, video, groupCall, users);
+								VoIPHelper.joinConference(LaunchActivity.instance, account, inputGroupCall, video, groupCall, users);
 							}
 						} else if (res instanceof TL_phone.groupCall) {
 							final TL_phone.groupCall r = (TL_phone.groupCall) res;
-							MessagesController.getInstance(currentAccount).putUsers(r.users, false);
-							MessagesController.getInstance(currentAccount).putChats(r.chats, false);
+							MessagesController.getInstance(account).putUsers(r.users, false);
+							MessagesController.getInstance(account).putChats(r.chats, false);
 							if (LaunchActivity.instance == null) {
 								return;
 							}
 							final TLRPC.TL_inputGroupCall inputGroupCall = new TLRPC.TL_inputGroupCall();
 							inputGroupCall.id = r.call.id;
 							inputGroupCall.access_hash = r.call.access_hash;
-							VoIPHelper.joinConference(LaunchActivity.instance, currentAccount, inputGroupCall, video, r.call, users);
+							VoIPHelper.joinConference(LaunchActivity.instance, account, inputGroupCall, video, r.call, users);
 						} else if (err != null) {
-							BulletinFactory.of(CallLogActivity.this)
+							BulletinFactory.of(parent)
 								.showForError(err);
 						}
 					}));
@@ -1953,7 +1959,7 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 				finishFragment();
 			}
 		};
-		presentFragment(fragment);
+		parent.presentFragment(fragment);
 	}
 
 	public static void createCallLink(Context context, int currentAccount, Theme.ResourcesProvider resourceProvider, Runnable done) {
@@ -1969,7 +1975,7 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 				MessagesController.getInstance(currentAccount).putChats(updates.chats, false);
 
 				TLRPC.GroupCall groupCall = null;
-				for (TLRPC.TL_updateGroupCall u : findUpdatesAndRemove(updates, TLRPC.TL_updateGroupCall.class)) {
+				for (TL_update.TL_updateGroupCall u : findUpdatesAndRemove(updates, TL_update.TL_updateGroupCall.class)) {
 					groupCall = u.call;
 				}
 				progressDialog.dismiss();

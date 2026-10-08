@@ -26,7 +26,6 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Region;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.text.SpannableString;
@@ -70,7 +69,7 @@ import org.telegram.ui.PhotoViewer;
 
 public class PhotoAttachPhotoCell extends FrameLayout {
 
-    private BackupImageView imageView;
+    public BackupImageView imageView;
     private FrameLayout container;
     private FrameLayout checkFrame;
     private CheckBox2 checkBox;
@@ -215,9 +214,9 @@ public class PhotoAttachPhotoCell extends FrameLayout {
                     invalidate();
                 }
 
-                if (photoEntry != null && photoEntry.isLivePhoto && allowLivePhotos) {
+                if (allowLivePhotos && !isParentDoFastScroll() && photoEntry != null && photoEntry.isLivePhoto()) {
                     Drawable icon;
-                    if (photoEntry.discardLivePhoto) {
+                    if (photoEntry.isUnalivePhoto()) {
                         if (livePhotoIconOff == null) {
                             livePhotoIconOff = getContext().getResources().getDrawable(R.drawable.media_live_off).mutate();
                         }
@@ -285,6 +284,20 @@ public class PhotoAttachPhotoCell extends FrameLayout {
         itemSize = dp(80);
     }
 
+    public interface ParentFastScrollDelegate {
+        boolean isInFastScroll();
+    }
+
+    private ParentFastScrollDelegate fastScrollDelegate;
+
+    public void setFastScrollDelegate(ParentFastScrollDelegate fastScrollDelegate) {
+        this.fastScrollDelegate = fastScrollDelegate;
+    }
+
+    private boolean isParentDoFastScroll() {
+        return fastScrollDelegate != null && fastScrollDelegate.isInFastScroll();
+    }
+
     public boolean canRevealSpoiler() {
         return hasSpoiler && spoilerRevealProgress == 0f && (photoEntry == null || !photoEntry.isAttachSpoilerRevealed);
     }
@@ -316,7 +329,7 @@ public class PhotoAttachPhotoCell extends FrameLayout {
             this.highQuality = highQuality;
 
             if (photoEntry != null) {
-                if (photoEntry.isVideo && !photoEntry.isLivePhoto) {
+                if (photoEntry.isVideo && !photoEntry.isLivePhoto()) {
                     imageView.setOrientation(0, true);
                     videoInfoContainer.setVisibility(VISIBLE);
                     videoPlayImageView.setVisibility(VISIBLE);
@@ -502,7 +515,7 @@ public class PhotoAttachPhotoCell extends FrameLayout {
         photoEntry = entry;
         isLast = last;
         this.allowLivePhotos = allowLivePhotos;
-        if (photoEntry.isVideo && !photoEntry.isLivePhoto) {
+        if (photoEntry.isVideo && !photoEntry.isLivePhoto()) {
             imageView.setOrientation(0, true);
             videoInfoContainer.setVisibility(VISIBLE);
             videoPlayImageView.setVisibility(VISIBLE);
@@ -522,7 +535,7 @@ public class PhotoAttachPhotoCell extends FrameLayout {
         } else if (photoEntry.thumbPath != null) {
             imageView.setImage(photoEntry.thumbPath, null, Theme.chat_attachEmptyDrawable);
         } else if (photoEntry.path != null) {
-            if (photoEntry.isVideo && !photoEntry.isLivePhoto) {
+            if (photoEntry.isVideo && !photoEntry.isLivePhoto()) {
                 imageView.setImage("vthumb://" + photoEntry.imageId + ":" + photoEntry.path, null, Theme.chat_attachEmptyDrawable);
             } else {
                 imageView.setOrientation(photoEntry.orientation, photoEntry.invert, true);
@@ -732,7 +745,7 @@ public class PhotoAttachPhotoCell extends FrameLayout {
         super.onInitializeAccessibilityNodeInfo(info);
         info.setEnabled(true);
         StringBuilder sb = new StringBuilder();
-        if (photoEntry != null && photoEntry.isLivePhoto) {
+        if (photoEntry != null && photoEntry.isLivePhoto()) {
             sb.append(getString(R.string.AttachLivePhoto));
         } else if (photoEntry != null && photoEntry.isVideo) {
             sb.append(getString(R.string.AttachVideo) + ", " + LocaleController.formatDuration(photoEntry.duration));
@@ -747,9 +760,7 @@ public class PhotoAttachPhotoCell extends FrameLayout {
         if (checkBox.isChecked()) {
             info.setSelected(true);
         }
-        if (Build.VERSION.SDK_INT >= 21) {
-            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_open_photo, getString(R.string.Open)));
-        }
+        info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_open_photo, getString(R.string.Open)));
     }
 
     @Override

@@ -30,6 +30,7 @@ import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.AppGlobalConfig;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BillingController;
 import org.telegram.messenger.BirthdayController;
@@ -58,6 +59,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.Vector;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_stars;
+import org.telegram.tgnet.tl.TL_update;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
@@ -742,6 +744,18 @@ public class StarsController {
         }, 0).show();
     }
 
+    private boolean isInvoiceBillingDisabled(TLRPC.InputPeer purposePeer) {
+        return AppGlobalConfig.getInstance(currentAccount).starsSpendTopUpInvoiceDisabled.get() && purposePeer != null;
+    }
+
+    public boolean canBuy(TLRPC.InputPeer purposePeer) {
+        if (purposePeer != null && isInvoiceBillingDisabled(purposePeer)) {
+            return BillingController.getInstance().isReady();
+        }
+
+        return true;
+    }
+
     public void buy(
         Activity activity,
         TL_stars.TL_starsTopupOption option,
@@ -762,7 +776,8 @@ public class StarsController {
             return;
         }
 
-        if (BuildVars.useInvoiceBilling() || !BillingController.getInstance().isReady()) {
+        final boolean isInvoiceBillingDisabled = isInvoiceBillingDisabled(purposePeer);
+        if ((BuildVars.useInvoiceBilling() || !BillingController.getInstance().isReady()) && !isInvoiceBillingDisabled) {
             final TLRPC.TL_inputStorePaymentStarsTopup purpose = new TLRPC.TL_inputStorePaymentStarsTopup();
             purpose.stars = option.stars;
             purpose.amount = option.amount;
@@ -826,6 +841,13 @@ public class StarsController {
                 }
             }));
 
+            return;
+        }
+
+        if (!BillingController.getInstance().isReady()) {
+            if (whenDone != null) {
+                whenDone.run(false, "INVOICE DISABLED");
+            }
             return;
         }
 
@@ -1597,14 +1619,14 @@ public class StarsController {
                 });
 
                 long dialogId = 0;
-                if (result.updates.update instanceof TLRPC.TL_updateChannel) {
-                    TLRPC.TL_updateChannel upd = (TLRPC.TL_updateChannel) result.updates.update;
+                if (result.updates.update instanceof TL_update.TL_updateChannel) {
+                    TL_update.TL_updateChannel upd = (TL_update.TL_updateChannel) result.updates.update;
                     dialogId = -upd.channel_id;
                 }
                 if (result.updates.updates != null) {
                     for (int i = 0; i < result.updates.updates.size(); ++i) {
-                        if (result.updates.updates.get(i) instanceof TLRPC.TL_updateChannel) {
-                            TLRPC.TL_updateChannel upd = (TLRPC.TL_updateChannel) result.updates.updates.get(i);
+                        if (result.updates.updates.get(i) instanceof TL_update.TL_updateChannel) {
+                            TL_update.TL_updateChannel upd = (TL_update.TL_updateChannel) result.updates.updates.get(i);
                             dialogId = -upd.channel_id;
                         }
                     }
@@ -1810,7 +1832,6 @@ public class StarsController {
 
         public MessageId message;
         public MessageObject messageObject;
-        public long random_id;
         public ChatActivity chatActivity;
         public Bulletin bulletin;
         public Bulletin.TwoLineAnimatedLottieLayout bulletinLayout;
@@ -1862,7 +1883,6 @@ public class StarsController {
         ) {
             this.message = message;
             this.messageObject = messageObject;
-            this.random_id = Utilities.random.nextLong() & 0xFFFFFFFFL | (currentTime << 32);
             this.chatActivity = chatActivity;
 
             final Context context = getContext(chatActivity);
@@ -2036,7 +2056,7 @@ public class StarsController {
             final TLRPC.TL_messages_sendPaidReaction req = new TLRPC.TL_messages_sendPaidReaction();
             req.peer = messagesController.getInputPeer(message.did);
             req.msg_id = message.mid;
-            req.random_id = random_id;
+            req.random_id = Utilities.random.nextLong() & 0xFFFFFFFFL | ((long) connectionsManager.getCurrentTime() << 32L);
             req.count = (int) amount;
             req.flags |= 1;
             final long privacyDialogId = getPeerId();
@@ -2775,7 +2795,12 @@ public class StarsController {
         }));
     }
 
+    @Deprecated
     public void getResellingGiftForm(TL_stars.StarGift gift, long dialogId, Utilities.Callback<TLRPC.TL_payments_paymentFormStarGift> whenDone) {
+        getResellingGiftForm(gift, dialogId, null, true, whenDone);
+    }
+
+    public void getResellingGiftForm(TL_stars.StarGift gift, long dialogId, TLRPC.TL_textWithEntities message, boolean hideMyName, Utilities.Callback<TLRPC.TL_payments_paymentFormStarGift> whenDone) {
         final Context context = LaunchActivity.instance != null ? LaunchActivity.instance : ApplicationLoader.applicationContext;
         final Theme.ResourcesProvider resourcesProvider = getResourceProvider();
 
@@ -2801,6 +2826,8 @@ public class StarsController {
         inputInvoice.slug = gift.slug;
         inputInvoice.to_id = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
         inputInvoice.ton = ton;
+        inputInvoice.message = message;
+        inputInvoice.show_name = !hideMyName;
 
         final TLRPC.TL_payments_getPaymentForm req = new TLRPC.TL_payments_getPaymentForm();
         final JSONObject themeParams = BotWebViewSheet.makeThemeParams(resourcesProvider);
@@ -2831,7 +2858,12 @@ public class StarsController {
         return stars;
     }
 
+    @Deprecated
     public void buyResellingGift(TLRPC.TL_payments_paymentFormStarGift form, TL_stars.StarGift gift, long dialogId, Utilities.Callback2<Boolean, String> whenDone) {
+        buyResellingGift(form, gift, dialogId, null, true, whenDone);
+    }
+
+    public void buyResellingGift(TLRPC.TL_payments_paymentFormStarGift form, TL_stars.StarGift gift, long dialogId, TLRPC.TL_textWithEntities message, boolean hideMyName, Utilities.Callback2<Boolean, String> whenDone) {
         final Context context = LaunchActivity.instance != null ? LaunchActivity.instance : ApplicationLoader.applicationContext;
         final Theme.ResourcesProvider resourcesProvider = getResourceProvider();
 
@@ -2859,6 +2891,8 @@ public class StarsController {
         inputInvoice.slug = gift.slug;
         inputInvoice.to_id = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
         inputInvoice.ton = ton;
+        inputInvoice.message = message;
+        inputInvoice.show_name = !hideMyName;
 
         final TLRPC.TL_payments_getPaymentForm req = new TLRPC.TL_payments_getPaymentForm();
         final JSONObject themeParams = BotWebViewSheet.makeThemeParams(resourcesProvider);
@@ -4254,7 +4288,7 @@ public class StarsController {
         if (msg == null) return;
         if (msg.messageOwner == null) return;
         final long price = msg.messageOwner.paid_message_stars;
-        if (price <= 0) return;
+        if (price <= 0 || msg.isEphemeral()) return;
 
         final boolean needsUndo = needsUndoButton(msg, price);
 

@@ -9,7 +9,6 @@
 package org.telegram.ui.Components;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
-import static org.telegram.messenger.AndroidUtilities.getWallpaperRotation;
 
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
@@ -18,10 +17,12 @@ import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
@@ -30,6 +31,7 @@ import android.graphics.Rect;
 import android.graphics.drawable.ShapeDrawable;
 import android.graphics.drawable.shapes.RectShape;
 import android.os.Build;
+import android.os.Looper;
 import android.os.SystemClock;
 
 import androidx.annotation.Keep;
@@ -40,13 +42,11 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 
 import android.text.Editable;
 import android.text.Layout;
-import android.text.Selection;
 import android.text.Spanned;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.TextWatcher;
-import android.util.Log;
 import android.view.ActionMode;
 import android.view.Gravity;
 import android.view.Menu;
@@ -55,10 +55,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.widget.EditText;
 import android.widget.TextView;
-
-import com.google.common.primitives.Chars;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
@@ -67,6 +64,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.XiaomiUtilities;
+import org.telegram.messenger.utils.Choreographer60FpsContent;
 import org.telegram.ui.ActionBar.FloatingActionMode;
 import org.telegram.ui.ActionBar.FloatingToolbar;
 import org.telegram.ui.ActionBar.Theme;
@@ -95,15 +93,7 @@ public class EditTextBoldCursor extends EditTextEffects {
     private SubstringLayoutAnimator hintAnimator;
     float rightHintOffset;
 
-    private Runnable invalidateRunnable = new Runnable() {
-        @Override
-        public void run() {
-            invalidate();
-            if (attachedToWindow != null) {
-                AndroidUtilities.runOnUIThread(this, 500);
-            }
-        }
-    };
+    private final Choreographer60FpsContent.FrameCallback invalidateCallback = d -> invalidate();
 
     private Paint linePaint;
     private Paint activeLinePaint;
@@ -151,6 +141,7 @@ public class EditTextBoldCursor extends EditTextEffects {
 
     private boolean nextSetTextAnimated;
     private boolean transformHintToHeader;
+    private boolean transformHintToHeaderOnFocus = true;
     private boolean currentDrawHintAsHeader;
     private AnimatorSet headerTransformAnimation;
     private float headerAnimationProgress;
@@ -466,6 +457,12 @@ public class EditTextBoldCursor extends EditTextEffects {
         }
     }
 
+    public void setTransformHintToHeaderOnFocus(boolean value) {
+        if (transformHintToHeaderOnFocus == value) return;
+        transformHintToHeaderOnFocus = value;
+        checkHeaderVisibility(false);
+    }
+
     public void setAllowDrawCursor(boolean value) {
         allowDrawCursor = value;
         invalidate();
@@ -679,7 +676,8 @@ public class EditTextBoldCursor extends EditTextEffects {
     }
 
     private void checkHeaderVisibility(boolean animated) {
-        boolean newHintHeader = transformHintToHeader && (isFocused() || getText().length() > 0);
+        boolean newHintHeader = transformHintToHeader
+            && (getText().length() > 0 || transformHintToHeaderOnFocus && isFocused());
         if (currentDrawHintAsHeader != newHintHeader) {
             if (headerTransformAnimation != null) {
                 headerTransformAnimation.cancel();
@@ -696,6 +694,14 @@ public class EditTextBoldCursor extends EditTextEffects {
                 headerAnimationProgress = newHintHeader ? 1.0f : 0.0f;
             }
             invalidate();
+        }
+    }
+
+    @Override
+    protected void onTextChanged(CharSequence text, int start, int lengthBefore, int lengthAfter) {
+        super.onTextChanged(text, start, lengthBefore, lengthAfter);
+        if (transformHintToHeader && !transformHintToHeaderOnFocus) {
+            checkHeaderVisibility(true);
         }
     }
 
@@ -949,7 +955,7 @@ public class EditTextBoldCursor extends EditTextEffects {
                 }
             }
         } else {
-            if (cursorDrawn) {
+            if (cursorDrawn && allowDrawCursor) {
                 try {
                     canvas.save();
                     int voffsetCursor = 0;
@@ -1134,14 +1140,40 @@ public class EditTextBoldCursor extends EditTextEffects {
             FileLog.e(e);
         }
         attachedToWindow = getRootView();
-        AndroidUtilities.runOnUIThread(invalidateRunnable);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            Choreographer60FpsContent.getInstance().addFrameCallback(invalidateCallback, 2);
+        }
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         attachedToWindow = null;
-        AndroidUtilities.cancelRunOnUIThread(invalidateRunnable);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            Choreographer60FpsContent.getInstance().removeFrameCallback(invalidateCallback);
+        }
+    }
+
+    private static final String BLINK_CLASS = "android.widget.Editor$Blink";
+
+    @Override
+    public boolean postDelayed(Runnable action, long delayMillis) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && action != null && delayMillis == 500
+                && BLINK_CLASS.equals(action.getClass().getName())
+                && Looper.myLooper() == Looper.getMainLooper()) {
+            Choreographer60FpsContent.getInstance().addFrameCallbackOnce(action, 2);
+            return true;
+        }
+        return super.postDelayed(action, delayMillis);
+    }
+
+    @Override
+    public boolean removeCallbacks(Runnable action) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            Choreographer60FpsContent.getInstance().removeFrameCallbackOnce(action);
+        }
+        return super.removeCallbacks(action);
     }
 
     BlurredBackgroundDrawableViewFactory blurredBackgroundDrawableViewFactory;
@@ -1246,23 +1278,82 @@ public class EditTextBoldCursor extends EditTextEffects {
         return null;
     }
 
+    private Drawable mTextSelectHandleLeft;
+    private Drawable mTextSelectHandleRight;
+    private Drawable mTextSelectHandle;
+    private ColorFilter mHandlesColorFilter;
+    private int mHandlesColor;
+
+    private Drawable updateHandleDrawable(Drawable d, boolean mutate) {
+        if (d != null) {
+            if (mutate) {
+                d = d.mutate();
+            }
+            if (mHandlesColorFilter != null) {
+                d.setColorFilter(mHandlesColorFilter);
+            }
+        }
+
+        return d;
+    }
+
     public void setHandlesColor(int color) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || XiaomiUtilities.isMIUI()) {
             return;
         }
-        try {
-            Drawable left = getTextSelectHandleLeft();
-            left.setColorFilter(color, PorterDuff.Mode.SRC_IN);
-            setTextSelectHandleLeft(left);
+        if (mHandlesColor != color) {
+            mHandlesColor = color;
+            mHandlesColorFilter = new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN);
 
-            Drawable middle = getTextSelectHandle();
-            middle.setColorFilter(color, PorterDuff.Mode.SRC_IN);
-            setTextSelectHandle(middle);
+            updateHandleDrawable(mTextSelectHandleLeft, false);
+            updateHandleDrawable(mTextSelectHandleRight, false);
+            updateHandleDrawable(mTextSelectHandle, false);
+        }
+    }
 
-            Drawable right = getTextSelectHandleRight();
-            right.setColorFilter(color, PorterDuff.Mode.SRC_IN);
-            setTextSelectHandleRight(right);
-        } catch (Exception ignore) {}
+    @Nullable
+    @Override
+    public Drawable getTextSelectHandleLeft() {
+        if (mTextSelectHandleLeft == null) {
+            mTextSelectHandleLeft = updateHandleDrawable(super.getTextSelectHandleLeft(), true);
+        }
+        return mTextSelectHandleLeft;
+    }
+
+    @Nullable
+    @Override
+    public Drawable getTextSelectHandleRight() {
+        if (mTextSelectHandleRight == null) {
+            mTextSelectHandleRight = updateHandleDrawable(super.getTextSelectHandleRight(), true);
+        }
+        return mTextSelectHandleRight;
+    }
+
+    @Nullable
+    @Override
+    public Drawable getTextSelectHandle() {
+        if (mTextSelectHandle == null) {
+            mTextSelectHandle = updateHandleDrawable(super.getTextSelectHandle(), true);
+        }
+        return mTextSelectHandle;
+    }
+
+    @Override
+    public void setTextSelectHandleLeft(@NonNull Drawable drawable) {
+        mTextSelectHandleLeft = updateHandleDrawable(drawable, true);
+        super.setTextSelectHandleLeft(mTextSelectHandleLeft);
+    }
+
+    @Override
+    public void setTextSelectHandleRight(@NonNull Drawable drawable) {
+        mTextSelectHandleRight = updateHandleDrawable(drawable, true);
+        super.setTextSelectHandleRight(mTextSelectHandleRight);
+    }
+
+    @Override
+    public void setTextSelectHandle(@NonNull Drawable drawable) {
+        mTextSelectHandle = updateHandleDrawable(drawable, true);
+        super.setTextSelectHandle(mTextSelectHandle);
     }
 
     private Runnable onPremiumMenuLockClickListener;
@@ -1289,8 +1380,4 @@ public class EditTextBoldCursor extends EditTextEffects {
         }
     }
 
-    @Override
-    protected void dispatchDraw(Canvas canvas) {
-        super.dispatchDraw(canvas);
-    }
 }

@@ -1716,7 +1716,10 @@ public class FilterTabsView extends FrameLayout {
                 invalidated = true;
                 requestLayout();
                 allTabsWidth = 0;
-                findDefaultTab().setTitle(LocaleController.getString(R.string.FilterAllChats), null, false);
+                final FilterTabsView.Tab defaultTab = findDefaultTab();
+                if (defaultTab != null) {
+                    defaultTab.setTitle(LocaleController.getString(R.string.FilterAllChats), null, false);
+                }
                 for (int b = 0; b < N; b++) {
                     allTabsWidth += tabs.get(b).getWidth(true) + dp(TAB_PADDING_WIDTH);
                 }
@@ -1745,9 +1748,14 @@ public class FilterTabsView extends FrameLayout {
             invalidated = true;
             requestLayout();
             listView.setItemAnimator(itemAnimator);
-            adapter.notifyDataSetChanged();
+            if (adapter != null) {
+                adapter.notifyDataSetChanged();
+            }
             allTabsWidth = 0;
-            findDefaultTab().setTitle(LocaleController.getString(R.string.FilterAllChats), null, false);
+            final FilterTabsView.Tab defaultTab = findDefaultTab();
+            if (defaultTab != null) {
+                defaultTab.setTitle(LocaleController.getString(R.string.FilterAllChats), null, false);
+            }
             for (int b = 0, N = tabs.size(); b < N; b++) {
                 allTabsWidth += tabs.get(b).getWidth(true) + dp(TAB_PADDING_WIDTH);
             }
@@ -1944,6 +1952,9 @@ public class FilterTabsView extends FrameLayout {
                 AndroidUtilities.runOnUIThread(resetDefaultPosition, 320);
             }
             super.onSelectedChanged(viewHolder, actionState);
+            if (viewHolder != null) {
+                viewHolder.itemView.setTag(R.id.dragging, actionState == ItemTouchHelper.ACTION_STATE_DRAG ? true : null);
+            }
         }
 
         @Override
@@ -1956,6 +1967,7 @@ public class FilterTabsView extends FrameLayout {
             super.clearView(recyclerView, viewHolder);
             viewHolder.itemView.setPressed(false);
             viewHolder.itemView.setBackground(null);
+            viewHolder.itemView.setTag(R.id.dragging, null);
         }
     }
 

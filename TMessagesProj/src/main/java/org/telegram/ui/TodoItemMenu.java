@@ -264,7 +264,7 @@ public class TodoItemMenu extends Dialog {
         ViewCompat.setOnApplyWindowInsetsListener(windowView, new OnApplyWindowInsetsListener() {
             @Override
             public @NonNull WindowInsetsCompat onApplyWindowInsets(@NonNull View v, @NonNull WindowInsetsCompat i) {
-                insets = i.getInsets(WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.systemBars());
+                insets = i.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars());
                 containerView.setPadding(insets.left, insets.top, insets.right, insets.bottom);
                 windowView.requestLayout();
 
@@ -288,17 +288,16 @@ public class TodoItemMenu extends Dialog {
         params.dimAmount = 0;
         params.flags &= ~WindowManager.LayoutParams.FLAG_DIM_BEHIND;
         params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
-        params.flags &=~ WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
         params.flags |= WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
                 | WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR
                 | WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
                 | WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION
                 | WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS
                 | WindowManager.LayoutParams.FLAG_FULLSCREEN
                 | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
-        if (Build.VERSION.SDK_INT >= 28) {
-            params.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-        }
+
+        AndroidUtilities.applyEdgeToEdgeLayoutParams(params);
         window.setAttributes(params);
 
         windowView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_FULLSCREEN);

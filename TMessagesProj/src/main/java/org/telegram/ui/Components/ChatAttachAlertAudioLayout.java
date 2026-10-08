@@ -9,27 +9,20 @@
 package org.telegram.ui.Components;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
-import static org.telegram.messenger.AndroidUtilities.loadVCardFromStream;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.database.Cursor;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
+import android.graphics.Bitmap;
 import android.provider.MediaStore;
 import android.text.Editable;
 import android.text.TextUtils;
-import android.text.TextWatcher;
-import android.util.Log;
-import android.util.LongSparseArray;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -45,16 +38,15 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.audioinfo.AudioInfo;
 import org.telegram.messenger.utils.TextWatcherImpl;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
-import org.telegram.ui.Adapters.MessagesSearchAdapter;
 import org.telegram.ui.Cells.SharedAudioCell;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
-import org.telegram.ui.Components.blur3.ViewGroupPartRenderer;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 
@@ -79,8 +71,6 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
     private final View fadeView;
 
     private DialogsActivityTopPanelLayout topPanelLayout;
-    private FrameLayout fragmentContextViewWrapper;
-    private FragmentContextView fragmentContextView;
 
     private String query;
 
@@ -93,6 +83,8 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
     private ArrayList<MediaController.AudioEntry> audioEntries = new ArrayList<>();
     private final HashSet<MediaController.AudioEntry> selectedAudios = new HashSet<>();
 
+    private MessagesController.SavedMusicList savedMusicList;
+    private ArrayList<MediaController.AudioEntry> profileEntries = new ArrayList<>();
     private ArrayList<MediaController.AudioEntry> foundInChats = new ArrayList<>();
     private ArrayList<MediaController.AudioEntry> foundGlobal = new ArrayList<>();
 
@@ -111,6 +103,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
         NotificationCenter.getInstance(parentAlert.currentAccount).addObserver(this, NotificationCenter.messagePlayingDidReset);
         NotificationCenter.getInstance(parentAlert.currentAccount).addObserver(this, NotificationCenter.messagePlayingDidStart);
         NotificationCenter.getInstance(parentAlert.currentAccount).addObserver(this, NotificationCenter.messagePlayingPlayStateChanged);
+        NotificationCenter.getInstance(parentAlert.currentAccount).addObserver(this, NotificationCenter.musicListLoaded);
         loadAudio();
 
         fadeView = new ChatAttachAlert.SearchFadeView(context, Theme.key_windowBackgroundWhite, resourcesProvider);
@@ -164,17 +157,19 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
             parentAlert.updateLayout(ChatAttachAlertAudioLayout.this, true, 0);
         });
 
-        fragmentContextViewWrapper = new FrameLayout(context);
-        topPanelLayout.addView(fragmentContextViewWrapper);
-        topPanelLayout.setViewVisible(fragmentContextViewWrapper, true, false);
-        fragmentContextView = new FragmentContextView(context, alert.baseFragment, frameLayout, false, resourcesProvider) {
-            @Override
-            public void setVisibility(int visibility) {
-                topPanelLayout.setViewVisible(fragmentContextViewWrapper, visibility == VISIBLE);
-            }
-        };
-        fragmentContextView.isInsideBubble = true;
-        fragmentContextViewWrapper.addView(fragmentContextView);
+        if (alert != null && alert.baseFragment != null) {
+            FrameLayout fragmentContextViewWrapper = new FrameLayout(context);
+            topPanelLayout.addView(fragmentContextViewWrapper);
+            topPanelLayout.setViewVisible(fragmentContextViewWrapper, true, false);
+            FragmentContextView fragmentContextView = new FragmentContextView(context, alert.baseFragment, frameLayout, false, resourcesProvider) {
+                @Override
+                public void setVisibility(int visibility) {
+                    topPanelLayout.setViewVisible(fragmentContextViewWrapper, visibility == VISIBLE);
+                }
+            };
+            fragmentContextViewWrapper.addView(fragmentContextView);
+            topPanelLayout.setCallFragmentContextView(fragmentContextView);
+        }
         lp = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.LEFT, 0, 8, 0, 4);
         lp.topMargin += AndroidUtilities.statusBarHeight + dp(48 - 21);
         frameLayout.addView(topPanelLayout, lp);
@@ -220,6 +215,8 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
 
         listView.adapter.update(false);
         checkUi_listViewPadding();
+
+        savedMusicList = new MessagesController.SavedMusicList(parentAlert.currentAccount, UserConfig.getInstance(parentAlert.currentAccount).getClientUserId());
     }
 
     private void checkUi_listViewPadding() {
@@ -241,6 +238,27 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
         listView.setPadding/*WithoutRequestLayout*/(0, padding, 0, listPaddingBottom);
     }
 
+    private void convertProfileMusicToEntries() {
+        if (savedMusicList == null) return;
+        int newCount = savedMusicList.list.size();
+        if (newCount < profileEntries.size()) {
+            profileEntries.subList(newCount, profileEntries.size()).clear();
+        }
+        for (int i = 0; i < newCount; ++i) {
+            MediaController.AudioEntry entry;
+            if (i >= profileEntries.size()) {
+                profileEntries.add(entry = new MediaController.AudioEntry());
+            } else {
+                entry = profileEntries.get(i);
+            }
+            if (entry.messageObject != savedMusicList.list.get(i)) {
+                final MessageObject messageObject = savedMusicList.list.get(i);
+                entry.id = globalAudioMessageId--;
+                entry.messageObject = messageObject;
+            }
+        }
+    }
+
     private boolean needPlayMessage(MessageObject messageObject) {
         playingAudio = messageObject;
         ArrayList<MessageObject> arrayList = new ArrayList<>();
@@ -250,6 +268,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
 
     private int LOAD_MORE_SEARCH_CHATS = 1;
     private int LOAD_MORE_SEARCH_GLOBAL = 2;
+    private int LOAD_MORE_SEARCH_PROFILE = 3;
 
     private void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         items.add(UItem.asSpace(-100, dp(1)));
@@ -271,6 +290,57 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
                 items.add(UItem.asFlicker(13, FlickerLoadingView.AUDIO_TYPE));
             }
             adapter.whiteSectionEnd();
+
+            convertProfileMusicToEntries();
+            if (savedMusicList != null && profileEntries != null && !profileEntries.isEmpty()) {
+                if (items.size() > firstIndex) {
+                    items.add(UItem.asShadow(-98, null));
+                }
+
+                adapter.whiteSectionStart();
+                items.add(UItem.asHeader(45, getString(R.string.AudioSearchProfile)));
+                for (int i = 0; i < profileEntries.size(); ++i) {
+                    final MediaController.AudioEntry entry = profileEntries.get(i);
+                    items.add(
+                        SharedAudioCell.Factory.as(entry, this::needPlayMessage)
+                            .setChecked(selectedAudios.contains(entry))
+                    );
+                }
+                if (savedMusicList.loading) {
+                    items.add(UItem.asFlicker(41, FlickerLoadingView.AUDIO_TYPE));
+                    items.add(UItem.asFlicker(42, FlickerLoadingView.AUDIO_TYPE));
+                    items.add(UItem.asFlicker(43, FlickerLoadingView.AUDIO_TYPE));
+                }
+                if (!savedMusicList.loading && !savedMusicList.endReached) {
+                    items.add(UItem.asButton(LOAD_MORE_SEARCH_PROFILE, R.drawable.arrow_more, getString(R.string.ShowMore)).accent());
+                }
+                adapter.whiteSectionEnd();
+            }
+
+            if (foundInChats != null && (!foundInChats.isEmpty() || searchChatsRequestId >= 0 || loadingSearchChats)) {
+                if (items.size() > firstIndex) {
+                    items.add(UItem.asShadow(-98, null));
+                }
+                adapter.whiteSectionStart();
+                items.add(UItem.asHeader((searchChatsRequestId >= 0 || loadingSearchChats) && foundInChats.isEmpty() ? 25 : 20, getString(R.string.AudioSearchChats)));
+                for (int i = 0; i < foundInChats.size(); ++i) {
+                    final MediaController.AudioEntry audioEntry = foundInChats.get(i);
+                    audioEntry.messageObject.setQuery(query);
+                    items.add(
+                        SharedAudioCell.Factory.as(audioEntry, this::needPlayMessage)
+                            .setChecked(selectedAudios.contains(audioEntry))
+                    );
+                }
+                if (searchChatsRequestId >= 0 || loadingSearchChats) {
+                    items.add(UItem.asFlicker(21, FlickerLoadingView.AUDIO_TYPE));
+                    items.add(UItem.asFlicker(22, FlickerLoadingView.AUDIO_TYPE));
+                    items.add(UItem.asFlicker(23, FlickerLoadingView.AUDIO_TYPE));
+                }
+                if (searchChatsHasMore) {
+                    items.add(UItem.asButton(LOAD_MORE_SEARCH_CHATS, R.drawable.arrow_more, getString(R.string.ShowMore)).accent());
+                }
+                adapter.whiteSectionEnd();
+            }
         } else {
             final String q = query.toLowerCase();
             final String tq = AndroidUtilities.translitSafe(q);
@@ -398,7 +468,10 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
     };
 
     private void onItemClick(UItem item, View view, int position, float x, float y) {
-        if (item != null && item.id == LOAD_MORE_SEARCH_CHATS) {
+        if (item != null && item.id == LOAD_MORE_SEARCH_PROFILE) {
+            savedMusicList.load();
+            return;
+        } else if (item != null && item.id == LOAD_MORE_SEARCH_CHATS) {
             searchChats();
             return;
         } else if (item != null && item.id == LOAD_MORE_SEARCH_GLOBAL) {
@@ -458,6 +531,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
         NotificationCenter.getInstance(parentAlert.currentAccount).removeObserver(this, NotificationCenter.messagePlayingDidReset);
         NotificationCenter.getInstance(parentAlert.currentAccount).removeObserver(this, NotificationCenter.messagePlayingDidStart);
         NotificationCenter.getInstance(parentAlert.currentAccount).removeObserver(this, NotificationCenter.messagePlayingPlayStateChanged);
+        NotificationCenter.getInstance(parentAlert.currentAccount).removeObserver(this, NotificationCenter.musicListLoaded);
     }
 
     @Override
@@ -546,6 +620,9 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
 
     @Override
     public void onShow(ChatAttachAlert.AttachAlertLayout previousLayout) {
+        searchChats();
+        savedMusicList.load();
+
         listView.layoutManager.scrollToPositionWithOffset(0, 0);
         listView.adapter.update(false);
     }
@@ -585,6 +662,12 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
                             cell.updateButtonState(false, true);
                         }
                     }
+                }
+            }
+        } else if (id == NotificationCenter.musicListLoaded) {
+            if (args[0] == savedMusicList) {
+                if (listView != null) {
+                    listView.adapter.update(true);
                 }
             }
         }
@@ -643,7 +726,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
             try (Cursor cursor = ApplicationLoader.applicationContext.getContentResolver().query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection, MediaStore.Audio.Media.IS_MUSIC + " != 0", null, MediaStore.Audio.Media.TITLE)) {
                 int id = -2000000000;
                 while (cursor.moveToNext()) {
-                    MediaController.AudioEntry audioEntry = new MediaController.AudioEntry();
+                    final MediaController.AudioEntry audioEntry = new MediaController.AudioEntry();
                     audioEntry.id = cursor.getInt(0);
                     audioEntry.author = cursor.getString(1);
                     audioEntry.title = cursor.getString(2);
@@ -651,9 +734,9 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
                     audioEntry.duration = (int) (cursor.getLong(4) / 1000);
                     audioEntry.genre = cursor.getString(5);
 
-                    File file = new File(audioEntry.path);
+                    final File file = new File(audioEntry.path);
 
-                    TLRPC.TL_message message = new TLRPC.TL_message();
+                    final TLRPC.TL_message message = new TLRPC.TL_message();
                     message.out = true;
                     message.id = id;
                     message.peer_id = new TLRPC.TL_peerUser();
@@ -667,7 +750,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
                     message.media.document = new TLRPC.TL_document();
                     message.flags |= TLRPC.MESSAGE_FLAG_HAS_MEDIA | TLRPC.MESSAGE_FLAG_HAS_FROM_ID;
 
-                    String ext = FileLoader.getFileExtension(file);
+                    final String ext = FileLoader.getFileExtension(file);
 
                     message.media.document.id = 0;
                     message.media.document.access_hash = 0;
@@ -677,18 +760,30 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
                     message.media.document.size = (int) file.length();
                     message.media.document.dc_id = 0;
 
-                    TLRPC.TL_documentAttributeAudio attributeAudio = new TLRPC.TL_documentAttributeAudio();
+                    final TLRPC.TL_documentAttributeAudio attributeAudio = new TLRPC.TL_documentAttributeAudio();
                     attributeAudio.duration = audioEntry.duration;
                     attributeAudio.title = audioEntry.title;
                     attributeAudio.performer = audioEntry.author;
                     attributeAudio.flags |= 3;
                     message.media.document.attributes.add(attributeAudio);
 
-                    TLRPC.TL_documentAttributeFilename fileName = new TLRPC.TL_documentAttributeFilename();
+                    final TLRPC.TL_documentAttributeFilename fileName = new TLRPC.TL_documentAttributeFilename();
                     fileName.file_name = file.getName();
                     message.media.document.attributes.add(fileName);
 
                     audioEntry.messageObject = new MessageObject(parentAlert.currentAccount, message, false, true);
+
+                    final AudioInfo info = AudioInfo.getAudioInfo(file);
+                    if (info != null && info.getCover() != null) {
+                        final int size = dp(44);
+                        final Bitmap bitmap = info.getCover();
+                        if (bitmap.getWidth() > size || bitmap.getHeight() > size) {
+                            final float scale = Math.min((float) size / bitmap.getWidth(), (float) size / bitmap.getHeight());
+                            audioEntry.messageObject.audioCover = Bitmap.createScaledBitmap(bitmap, (int) (bitmap.getWidth() * scale), (int) (bitmap.getHeight() * scale), true);
+                        } else {
+                            audioEntry.messageObject.audioCover = bitmap;
+                        }
+                    }
 
                     newAudioEntries.add(audioEntry);
                     id--;
@@ -713,7 +808,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
     private void searchChats() {
         AndroidUtilities.cancelRunOnUIThread(searchChatsRunnable);
 
-        if (TextUtils.isEmpty(query) || query.length() < 3) {
+        if (query != null && query.length() > 0 && query.length() < 3) {
             if (loadingSearchChats) {
                 loadingSearchChats = false;
                 updateWithSavingScroll();
@@ -744,7 +839,8 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
 
         final TLRPC.TL_messages_searchGlobal req = new TLRPC.TL_messages_searchGlobal();
         req.filter = new TLRPC.TL_inputMessagesFilterMusic();
-        req.q = lastSearchChatsQuery = query == null ? "" : query;
+        lastSearchChatsQuery = query;
+        req.q = query == null ? "" : query;
         req.limit = foundInChats.isEmpty() ? 3 : 15;
         if (foundInChats.size() > 0) {
             final MessageObject lastMessage = foundInChats.get(foundInChats.size() - 1).messageObject;
@@ -948,7 +1044,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
             addView(layout, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
 
             imageView = new BackupImageView(context);
-            imageView.setImageDrawable(new RLottieDrawable(R.raw.utyan_empty, "utyan_empty", dp(120), dp(120)));
+            imageView.setImageDrawable(new RLottieDrawable(R.raw.utyan_empty, dp(120), dp(120)));
             layout.addView(imageView, LayoutHelper.createLinear(120, 120, Gravity.CENTER, 0, 0, 0, 0));
 
             titleView = new TextView(context);

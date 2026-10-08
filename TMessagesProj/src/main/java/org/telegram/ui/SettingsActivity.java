@@ -56,6 +56,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.collection.LongSparseArray;
+import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.RecyclerView;
@@ -80,6 +81,8 @@ import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.SharedPrefsHelper;
+import org.telegram.utils.settings.SharedSettings;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.browser.Browser;
@@ -90,6 +93,7 @@ import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.SettingsSearchCell;
@@ -101,6 +105,7 @@ import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugController;
 import org.telegram.ui.Components.FragmentFloatingButton;
+import org.telegram.ui.Components.HintsController;
 import org.telegram.ui.Components.IconBackgroundColors;
 import org.telegram.ui.Components.ImageUpdater;
 import org.telegram.ui.Components.InstantCameraView;
@@ -293,7 +298,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 if (id == -1) {
                     finishFragment();
                 } else if (id == 2) {
-                    presentFragment(new LogoutActivity());
+                    presentSettingFragment(new LogoutActivity());
                 }
             }
         });
@@ -328,6 +333,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         searchItem.setSearchFieldHint(getString(R.string.Search));
 
         otherItem = menu.addItem(1, R.drawable.ic_ab_other);
+        otherItem.setContentDescription(getString(R.string.AccDescrMoreOptions));
         otherItem.addSubItem(2, R.drawable.msg_leave, getString(R.string.LogOut));
 
         search = new ProfileActivity.SearchAdapter(this, context) {
@@ -703,13 +709,13 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         if (ApplicationLoader.isBetaBuild() || ApplicationLoader.isStandaloneBuild() || ApplicationLoader.isHuaweiStoreBuild() || (StarsController.getInstance(currentAccount, true).balanceAvailable() && (StarsController.getInstance(currentAccount, true).hasTransactions() || StarsController.getInstance(currentAccount, true).getBalance().positive()))) {
             StarsController c = StarsController.getTonInstance(currentAccount);
             long balance = c.getBalance().amount;
-            items.add(SettingCell.Factory.of(13, 0xFF1BA4ED, 0xFF1488E1, R.drawable.settings_ton, getString(R.string.MyTON), null, c.balanceAvailable() && balance > 0 ? StarsIntroActivity.formatStarsAmount(c.getBalance(), 0.85f, ' ') : ""));
+            items.add(SettingCell.Factory.of(13, 0xFF1BA4ED, 0xFF1488E1, R.drawable.settings_gram_24, getString(R.string.MyTON), null, c.balanceAvailable() && balance > 0 ? StarsIntroActivity.formatStarsAmount(c.getBalance(), 0.85f, ' ') : ""));
         }
 
         TLRPC.TL_attachMenuBots menuBots = MediaDataController.getInstance(UserConfig.selectedAccount).getAttachMenuBots();
         if (menuBots != null && menuBots.bots != null && !menuBots.bots.isEmpty()) {
             for (TLRPC.TL_attachMenuBot attachMenuBot : menuBots.bots) {
-                final int WALLET_BOT_ID = 1985737506;
+                final long WALLET_BOT_ID = 1985737506L;
                 if (attachMenuBot.show_in_side_menu && attachMenuBot.bot_id == WALLET_BOT_ID) {
                     UItem item = SettingCell.Factory.ofBot(attachMenuBot, 0xFF1BA4ED, 0xFF1488E1, R.drawable.settings_wallet);
                     item.object = attachMenuBot;
@@ -718,7 +724,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             }
         }
 
-//        items.add(SettingCell.Factory.of(14, 0, "Wallet"));
         if (!getMessagesController().premiumFeaturesBlocked()) {
             items.add(SettingCell.Factory.of(15, 0xFFF45255, 0xFFDF3955, R.drawable.settings_business, getString(R.string.TelegramBusiness)));
         }
@@ -734,6 +739,12 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         items.add(SettingCell.Factory.of(23, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_features, getString(R.string.TelegramFeatures)));
         items.add(SettingCell.Factory.of(19, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_policy, getString(R.string.PrivacyPolicy)));
 
+        if (SharedSettings.experimentalSettingsAllowed.get()) {
+            items.add(UItem.asShadow(null));
+            items.add(UItem.asHeader("Experimental"));
+            items.add(SettingCell.Factory.of(24, 0xFFF45255, 0xFFDF3955, 0, getString(R.string.RoundVideoSettings)));
+        }
+
         if (BuildVars.LOGS_ENABLED || BuildVars.DEBUG_PRIVATE_VERSION) {
             items.add(UItem.asShadow(null));
             items.add(UItem.asHeader(getString(R.string.SettingsDebug)));
@@ -743,6 +754,22 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
 
         items.add(UItem.asCustomShadow(versionView));
+    }
+
+    private void presentSettingFragment(BaseFragment fragment) {
+        if (AndroidUtilities.isTablet() && LaunchActivity.instance != null && LaunchActivity.instance.getRightActionBarLayout() != null) {
+            final INavigationLayout layout = LaunchActivity.instance.getRightActionBarLayout();
+            if (!layout.getFragmentStack().isEmpty()) {
+                for (int a = 0; a < layout.getFragmentStack().size() - 1; a++) {
+                    layout.removeFragmentFromStack(layout.getFragmentStack().get(0));
+                    a--;
+                }
+                layout.closeLastFragment(false);
+            }
+            layout.presentFragment(new INavigationLayout.NavigationParams(fragment).setNoAnimation(true).forceRightLayout());
+        } else {
+            presentFragment(fragment);
+        }
     }
 
     private void onClick(UItem item, View view, int position, float x, float y) {
@@ -786,44 +813,44 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
         switch (item.id) {
             case 1:
-                presentFragment(new UserInfoActivity());
+                presentSettingFragment(new UserInfoActivity());
                 break;
             case 2:
-                presentFragment(new ThemeActivity(ThemeActivity.THEME_TYPE_BASIC));
+                presentSettingFragment(new ThemeActivity(ThemeActivity.THEME_TYPE_BASIC));
                 break;
             case 3:
-                presentFragment(new PrivacySettingsActivity());
+                presentSettingFragment(new PrivacySettingsActivity());
                 break;
             case 5:
-                presentFragment(new NotificationsSettingsActivity());
+                presentSettingFragment(new NotificationsSettingsActivity());
                 break;
             case 6:
-                presentFragment(new DataSettingsActivity());
+                presentSettingFragment(new DataSettingsActivity());
                 break;
             case 7:
-                presentFragment(new FiltersSetupActivity());
+                presentSettingFragment(new FiltersSetupActivity());
                 break;
             case 8:
-                presentFragment(new SessionsActivity(0));
+                presentSettingFragment(new SessionsActivity(0));
                 break;
             case 9:
-                presentFragment(new LiteModeSettingsActivity());
+                presentSettingFragment(new LiteModeSettingsActivity());
                 break;
             case 10:
-                presentFragment(new LanguageSelectActivity());
+                presentSettingFragment(new LanguageSelectActivity());
                 break;
 
             case 11:
-                presentFragment(new PremiumPreviewFragment("settings"));
+                presentSettingFragment(new PremiumPreviewFragment("settings"));
                 break;
             case 12:
-                presentFragment(new StarsIntroActivity());
+                presentSettingFragment(new StarsIntroActivity());
                 break;
             case 13:
-                presentFragment(new TONIntroActivity());
+                presentSettingFragment(new TONIntroActivity());
                 break;
             case 15:
-                presentFragment(new PremiumPreviewFragment(PremiumPreviewFragment.FEATURES_BUSINESS, "settings"));
+                presentSettingFragment(new PremiumPreviewFragment(PremiumPreviewFragment.FEATURES_BUSINESS, "settings"));
                 break;
             case 16:
                 UserSelectorBottomSheet.open(0, BirthdayController.getInstance(UserConfig.selectedAccount).getState());
@@ -854,6 +881,10 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 } else {
                     Browser.openUrl(getContext(), LocaleController.getString(R.string.TelegramFeaturesUrl));
                 }
+                break;
+            }
+            case 24: {
+                presentFragment(new RoundVideoSettingsActivity());
                 break;
             }
         }
@@ -930,8 +961,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
     @NonNull
     private WindowInsetsCompat onApplyWindowInsets(@NonNull View v, @NonNull WindowInsetsCompat insets) {
-        final int statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
-        navigationBarHeight = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+        final Insets systemInsets = AndroidUtilities.getDefaultWindowInsets(insets, false);
+        navigationBarHeight = systemInsets.bottom;
+        final int statusBarHeight = systemInsets.top;
         listView.setPadding(0, statusBarHeight + dp(12), 0, navigationBarHeight + additionNavigationBarHeight);
         return WindowInsetsCompat.CONSUMED;
     }
@@ -1016,6 +1048,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
             counterView.setBackground(Theme.createRoundRectDrawable(dp(10), Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider)));
             arrowView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayIcon, resourcesProvider), PorterDuff.Mode.SRC_IN));
+            emojiStatusDrawable.setColor(Theme.getColor(Theme.key_profile_verifiedBackground, resourcesProvider));
         }
 
         public void set(int account) {
@@ -1105,21 +1138,31 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
         private final Theme.ResourcesProvider resourcesProvider;
         private final Background iconBackground;
+        private final FrameLayout iconLayout;
         private final ImageView iconView;
         private final LinearLayout textLayout;
         private final TextView titleView;
         private final TextView subtitleView;
         private final TextView valueView;
+        private final boolean mini;
 
         public SettingCell(Context context, Theme.ResourcesProvider resourcesProvider) {
+            this(context, resourcesProvider, false);
+        }
+
+        public SettingCell(Context context, Theme.ResourcesProvider resourcesProvider, boolean mini) {
             super(context);
 
             this.resourcesProvider = resourcesProvider;
+            this.mini = mini;
             setOrientation(HORIZONTAL);
 
+            iconLayout = new FrameLayout(context);
+            iconLayout.setBackground(iconBackground = new Background());
+
             iconView = new ImageView(context);
-            iconView.setScaleType(ImageView.ScaleType.CENTER);
-            iconView.setBackground(iconBackground = new Background());
+            iconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            iconLayout.addView(iconView, LayoutHelper.createFrame(24, 24, Gravity.CENTER));
 
             textLayout = new LinearLayout(context);
             textLayout.setOrientation(VERTICAL);
@@ -1136,11 +1179,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
             if (LocaleController.isRTL) {
                 addView(valueView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 20, 0, 0, 0));
-                addView(textLayout, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1, Gravity.CENTER_VERTICAL | Gravity.FILL_HORIZONTAL, 20, 0, 18, 0));
-                addView(iconView, LayoutHelper.createLinear(28, 28, Gravity.CENTER_VERTICAL | Gravity.RIGHT, 0, 0, 18, 0));
+                addView(textLayout, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1, Gravity.CENTER_VERTICAL | Gravity.FILL_HORIZONTAL, 20, 0, mini ? 12 : 18, 0));
+                addView(iconLayout, LayoutHelper.createLinear(28, 28, Gravity.CENTER_VERTICAL | Gravity.RIGHT, 0, 0, mini ? 9 : 18, 0));
             } else {
-                addView(iconView, LayoutHelper.createLinear(28, 28, Gravity.CENTER_VERTICAL | Gravity.LEFT, 18, 0, 0, 0));
-                addView(textLayout, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1, Gravity.CENTER_VERTICAL | Gravity.FILL_HORIZONTAL, 18, 0, 20, 0));
+                addView(iconLayout, LayoutHelper.createLinear(28, 28, Gravity.CENTER_VERTICAL | Gravity.LEFT, mini ? 9 : 18, 0, 0, 0));
+                addView(textLayout, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1, Gravity.CENTER_VERTICAL | Gravity.FILL_HORIZONTAL,  mini ? 12 : 18, 0, 20, 0));
                 addView(valueView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 0, 0, 20, 0));
             }
             updateColors();
@@ -1162,7 +1205,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             CharSequence subtitle,
             CharSequence value
         ) {
-            iconView.setVisibility(icon != 0 ? View.VISIBLE : View.GONE);
+            iconLayout.setVisibility(icon != 0 ? View.VISIBLE : View.GONE);
             titleView.setTranslationX(icon == 0 ? dp(2) : 0);
             subtitleView.setTranslationX(icon == 0 ? dp(2) : 0);
 
@@ -1171,6 +1214,10 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             titleView.setText(title);
             subtitleView.setVisibility((twoLines = !TextUtils.isEmpty(subtitle)) ? View.VISIBLE : View.GONE);
             subtitleView.setText(subtitle);
+            setValue(value);
+        }
+
+        public void setValue(CharSequence value) {
             valueView.setVisibility(!TextUtils.isEmpty(value) ? View.VISIBLE : View.GONE);
             valueView.setText(value);
         }
@@ -1179,7 +1226,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             super.onMeasure(
                 MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(dp(twoLines ? 60 : 50), MeasureSpec.EXACTLY)
+                MeasureSpec.makeMeasureSpec(dp(mini ? 44 : twoLines ? 60 : 50), MeasureSpec.EXACTLY)
             );
         }
 
@@ -1421,6 +1468,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 (SharedConfig.frameMetricsEnabled ? "hide frame metrics" : "show frame metrics"),
                 BuildVars.DEBUG_PRIVATE_VERSION ? (SharedConfig.shadowsInSections ? "disable shadows in settings" : "enable shadows in settings") : null,
                 BuildVars.DEBUG_PRIVATE_VERSION ? (SharedConfig.debugViewMetrics ? "disable debug view metrics" : "enable debug view metrics") : null,
+                (SharedSettings.experimentalSettingsAllowed.get() ? "hide experimental settings" : "show experimental settings")
         };
 
         builder.setItems(items, (dialog, which) -> {
@@ -1453,9 +1501,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 getMessagesStorage().clearSentMedia();
                 SharedConfig.setNoSoundHintShowed(false);
                 SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                editor.remove("archivehint").remove("proximityhint").remove("archivehint_l").remove("searchpostsnew").remove("speedhint").remove("gifhint").remove("reminderhint").remove("soundHint").remove("themehint").remove("bganimationhint").remove("filterhint").remove("n_0").remove("storyprvhint").remove("storyhint").remove("storyhint2").remove("storydualhint").remove("storysvddualhint").remove("stories_camera").remove("dualcam").remove("dualmatrix").remove("dual_available").remove("archivehint").remove("askNotificationsAfter").remove("askNotificationsDuration").remove("viewoncehint").remove("voicepausehint").remove("taptostorysoundhint").remove("nothanos").remove("voiceoncehint").remove("savedhint").remove("savedsearchhint").remove("savedsearchtaghint").remove("groupEmojiPackHintShown").remove("newppsms").remove("monetizationadshint").remove("seekSpeedHintShowed").remove("unsupport_video/av01").remove("channelgifthint").remove("statusgiftpage").remove("multistorieshint").remove("channelsuggesthint").remove("trimvoicehint").remove("taptostoryhighlighthint").remove("proxycheckstatusip").remove("callmiconstart").remove("showchattagsinfo").remove("language_showed2").remove("aihintshown").apply();
+                editor.remove("archivehint").remove("proximityhint").remove("archivehint_l").remove("searchpostsnew").remove("speedhint").remove("gifhint").remove("reminderhint").remove("soundHint").remove("themehint").remove("bganimationhint").remove("filterhint").remove("n_0").remove("storyprvhint").remove("storyhint").remove("storyhint2").remove("storydualhint").remove("storysvddualhint").remove("stories_camera").remove("dualcam").remove("dualmatrix").remove("dual_available").remove("archivehint").remove("askNotificationsAfter").remove("askNotificationsDuration").remove("viewoncehint").remove("voicepausehint").remove("taptostorysoundhint").remove("nothanos").remove("voiceoncehint").remove("savedhint").remove("savedsearchhint").remove("savedsearchtaghint").remove("newppsms").remove("monetizationadshint").remove("seekSpeedHintShowed").remove("unsupport_video/av01").remove("statusgiftpage").remove("multistorieshint").remove("trimvoicehint").remove("taptostoryhighlighthint").remove("proxycheckstatusip").remove("callmiconstart").remove("showchattagsinfo").remove("language_showed2").remove("aihintshown").remove("savedmsgschatshint").apply();
+                HintsController.resetAll();
+                SharedPrefsHelper.cleanupAccount(currentAccount);
                 MessagesController.getEmojiSettings(currentAccount).edit().remove("featured_hidden").remove("emoji_featured_hidden").commit();
-                MessagesController.getGlobalNotificationsSettings().edit().remove("disable_sharing_learn").apply();
+                MessagesController.getGlobalNotificationsSettings().edit().remove("disable_sharing_learn").remove("askedAboutFSILockscreen").apply();
                 SharedConfig.textSelectionHintShows = 0;
                 SharedConfig.lockRecordAudioVideoHint = 0;
                 SharedConfig.stickersReorderingHintUsed = false;
@@ -1728,6 +1778,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             } else if (which == 41) {
                 final SharedPreferences prefs = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
                 prefs.edit().putBoolean("debugViewMetrics", SharedConfig.debugViewMetrics = !SharedConfig.debugViewMetrics).apply();
+            } else if (which == 42) {
+                SharedSettings.experimentalSettingsAllowed.toggle();
+                listView.adapter.update(true);
             }
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
@@ -1872,7 +1925,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                             src.renameTo(destFile);
                             final String oldKey = avatar.volume_id + "_" + avatar.local_id + "@90_90";
                             final String newKey = small.location.volume_id + "_" + small.location.local_id + "@90_90";
-                            ImageLoader.getInstance().replaceImageInCache(oldKey, newKey, ImageLocation.getForUserOrChat(user, ImageLocation.TYPE_SMALL), false);
+                            ImageLoader.getInstance().replaceImageInCache(oldKey, newKey, ImageLocation.getForUserOrChat(currentAccount, user, ImageLocation.TYPE_SMALL), false);
                         }
 
                         if (videoSize != null && videoPath != null) {

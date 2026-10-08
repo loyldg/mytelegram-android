@@ -47,7 +47,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.Emoji;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
@@ -59,7 +58,6 @@ import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.ButtonBounce;
-import org.telegram.ui.Components.ColoredImageSpan;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LinkPath;
 import org.telegram.ui.Components.LinkSpanDrawable;
@@ -157,6 +155,19 @@ public class HintView2 extends View {
 
         setTextSize(14);
         setTextColor(0xffffffff);
+    }
+
+    private float shadowRadius, shadowDx, shadowDy;
+    private int shadowColor;
+
+    public HintView2 setShadow(float radius, float dx, float dy, int color) {
+        this.backgroundPaint.setShadowLayer(
+            shadowRadius = radius,
+            shadowDx = dx,
+            shadowDy = dy,
+            shadowColor = color
+        );
+        return this;
     }
 
     public HintView2 setDirection(int direction) {
@@ -291,7 +302,7 @@ public class HintView2 extends View {
     }
 
     public HintView2 setIcon(int resId) {
-        RLottieDrawable icon = new RLottieDrawable(resId, "" + resId, dp(34), dp(34));
+        RLottieDrawable icon = new RLottieDrawable(resId, dp(34), dp(34));
         icon.start();
         return setIcon(icon);
     }
@@ -769,14 +780,25 @@ public class HintView2 extends View {
     private LinearGradient flickerStrokeGradient;
     private long flickerStart;
 
-    protected void drawBgPath(Canvas canvas) {
+    protected void drawBgPath(Canvas canvas, float alpha) {
         if (blurBackgroundPaint != null) {
             canvas.saveLayerAlpha(0, 0, getWidth(), getHeight(), 0xFF, Canvas.ALL_SAVE_FLAG);
             canvas.drawPath(path, blurBackgroundPaint);
             canvas.drawPath(path, blurCutPaint);
             canvas.restore();
         }
+        if (shadowColor != 0) {
+            backgroundPaint.setShadowLayer(
+                shadowRadius,
+                shadowDx,
+                shadowDy,
+                Theme.multAlpha(shadowColor, alpha)
+            );
+        }
+        final int wasAlpha = backgroundPaint.getAlpha();
+        backgroundPaint.setAlpha((int) (wasAlpha * alpha));
         canvas.drawPath(path, backgroundPaint);
+        backgroundPaint.setAlpha(wasAlpha);
         if (flicker) {
             final int delay = 4, duration = 1000;
             final int gradientWidth = dp(64);
@@ -856,7 +878,6 @@ public class HintView2 extends View {
         }
 
         updateBlurBounds();
-        final int wasAlpha = backgroundPaint.getAlpha();
         AndroidUtilities.rectTmp.set(bounds);
         AndroidUtilities.rectTmp.inset(-arrowHeight, -arrowHeight);
         float backgroundAlpha = alpha;
@@ -864,9 +885,7 @@ public class HintView2 extends View {
             backgroundAlpha *= (1f - blurAlpha);
             blurBackgroundPaint.setAlpha((int) (0xFF * alpha));
         }
-        backgroundPaint.setAlpha((int) (wasAlpha * backgroundAlpha));
-        drawBgPath(canvas);
-        backgroundPaint.setAlpha(wasAlpha);
+        drawBgPath(canvas, backgroundAlpha);
 
         if (selectorDrawable != null) {
             selectorDrawable.setAlpha((int) (0xFF * alpha));
@@ -938,11 +957,7 @@ public class HintView2 extends View {
         float arrowXY;
         final float r = Math.min(rounding, Math.min(width / 2, height / 2));
         if (direction == DIRECTION_TOP || direction == DIRECTION_BOTTOM) {
-            if (roundWithCornerEffect) {
-                arrowXY = lerp(getPaddingLeft(), getMeasuredWidth() - getPaddingRight(), joint);
-            } else {
-                arrowXY = lerp(getPaddingLeft() + r + arrowHalfWidth, getMeasuredWidth() - getPaddingRight() - r - arrowHalfWidth, joint);
-            }
+            arrowXY = lerp(getPaddingLeft(), getMeasuredWidth() - getPaddingRight(), joint);
             arrowXY = Utilities.clamp(arrowXY + jointTranslate, getMeasuredWidth() - getPaddingRight(), getPaddingLeft());
             float left = Math.max(getPaddingLeft(), arrowXY - width / 2f);
             float right = Math.min(left + width, getMeasuredWidth() - getPaddingRight());
@@ -954,11 +969,7 @@ public class HintView2 extends View {
                 bounds.set(left, getMeasuredHeight() - arrowHeight - getPaddingBottom() - height, right, getMeasuredHeight() - arrowHeight - getPaddingBottom());
             }
         } else {
-            if (roundWithCornerEffect) {
-                arrowXY = lerp(getPaddingTop(), getMeasuredHeight() - getPaddingBottom(), joint);
-            } else {
-                arrowXY = lerp(getPaddingTop() + r + arrowHalfWidth, getMeasuredHeight() - getPaddingBottom() - r - arrowHalfWidth, joint);
-            }
+            arrowXY = lerp(getPaddingTop(), getMeasuredHeight() - getPaddingBottom(), joint);
             arrowXY = Utilities.clamp(arrowXY + jointTranslate, getMeasuredHeight() - getPaddingBottom(), getPaddingTop());
             float top = Math.max(getPaddingTop(), arrowXY - height / 2f);
             float bottom = Math.min(top + height, getMeasuredHeight() - getPaddingBottom());

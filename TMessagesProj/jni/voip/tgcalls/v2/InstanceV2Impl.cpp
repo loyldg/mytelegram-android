@@ -63,20 +63,11 @@
 #include "SignalingConnection.h"
 #include "ExternalSignalingConnection.h"
 #include "SignalingSctpConnection.h"
-#include "SignalingKcpConnection.h"
 #include "utils/gzip.h"
+#include "v2/CustomParameters.h"
 
 namespace tgcalls {
 namespace {
-
-[[maybe_unused]] bool getCustomParameterBool(std::map<std::string, json11::Json> const &parameters, std::string const &name) {
-    const auto value = parameters.find(name);
-    if (value != parameters.end() && value->second.is_bool() && value->second.bool_value()) {
-        return true;
-    } else {
-        return false;
-    }
-}
 
 enum class SignalingProtocolVersion {
     V1,
@@ -275,15 +266,15 @@ public:
     AudioSinkImpl(std::function<void(float, float)> update) :
     _update(update) {
     }
-    
+
     virtual ~AudioSinkImpl() {
     }
-    
+
     virtual void OnData(const Data& audio) override {
         if (_update && audio.channels == 1) {
             const int16_t *samples = (const int16_t *)audio.data;
             int numberOfSamplesInFrame = (int)audio.samples_per_channel;
-            
+
             int16_t currentPeak = 0;
             for (int i = 0; i < numberOfSamplesInFrame; i++) {
                 int16_t sample = samples[i];
@@ -298,7 +289,7 @@ public:
                 }
                 _peakCount += 1;
             }
-            
+
             if (_peakCount >= 4400) {
                 float level = ((float)(_peak)) / 8000.0f;
                 _peak = 0;
@@ -307,10 +298,10 @@ public:
             }
         }
     }
-    
+
 private:
     std::function<void(float, float)> _update;
-    
+
     int _peakCount = 0;
     uint16_t _peak = 0;
 };
@@ -936,8 +927,7 @@ public:
     _taskQueueFactory(webrtc::CreateDefaultTaskQueueFactory()),
     _initialInputDeviceId(std::move(descriptor.initialInputDeviceId)),
     _initialOutputDeviceId(std::move(descriptor.initialOutputDeviceId)),
-    _videoCapture(descriptor.videoCapture),
-    _platformContext(descriptor.platformContext) {
+    _videoCapture(descriptor.videoCapture) {
         webrtc::field_trial::InitFieldTrialsFromString(
             "WebRTC-DataChannel-Dcsctp/Enabled/"
             "WebRTC-Audio-MinimizeResamplingOnMobile/Enabled/"
@@ -990,24 +980,18 @@ public:
 
         const auto weak = std::weak_ptr<InstanceV2ImplInternal>(shared_from_this());
 
-        if (getCustomParameterBool(_customParameters, "network_kcp_experiment")) {
-            _signalingConnection = std::make_shared<SignalingKcpConnection>(
-                _threads,
-                [threads = _threads, weak](const std::vector<uint8_t> &data) {
-                    threads->getMediaThread()->PostTask([weak, data] {
-                        const auto strong = weak.lock();
-                        if (!strong) {
-                            return;
-                        }
+        if (_signalingProtocolVersion == SignalingProtocolVersion::V3 && !getCustomParameterBool(_customParameters, "network_signaling_nosctp")) {
+            SignalingSctpConnection::Options sctpOptions;
+            if (int v = getCustomParameterInt(_customParameters, "network_sctp_t1_init_ms")) {
+                sctpOptions.t1InitTimeoutMs = v;
+            }
+            if (int v = getCustomParameterInt(_customParameters, "network_sctp_t1_cookie_ms")) {
+                sctpOptions.t1CookieTimeoutMs = v;
+            }
+            if (int v = getCustomParameterInt(_customParameters, "network_sctp_max_backoff_ms")) {
+                sctpOptions.maxBackoffMs = v;
+            }
 
-                        strong->onSignalingData(data);
-                    });
-                },
-                [signalingDataEmitted = _signalingDataEmitted](const std::vector<uint8_t> &data) {
-                    signalingDataEmitted(data);
-                }
-            );
-        } else if (_signalingProtocolVersion == SignalingProtocolVersion::V3 && !getCustomParameterBool(_customParameters, "network_signaling_nosctp")) {
             _signalingConnection = std::make_shared<SignalingSctpConnection>(
                 _threads,
                 [threads = _threads, weak](const std::vector<uint8_t> &data) {
@@ -1022,7 +1006,9 @@ public:
                 },
                 [signalingDataEmitted = _signalingDataEmitted](const std::vector<uint8_t> &data) {
                     signalingDataEmitted(data);
-                }
+                },
+                _encryptionKey.isOutgoing,
+                sctpOptions
             );
         }
         if (!_signalingConnection) {
@@ -1134,8 +1120,8 @@ public:
         peerConnectionFactoryDependencies.audio_encoder_factory = webrtc::CreateAudioEncoderFactory<webrtc::AudioEncoderOpus, webrtc::AudioEncoderL16>();
         peerConnectionFactoryDependencies.audio_decoder_factory = webrtc::CreateAudioDecoderFactory<webrtc::AudioDecoderOpus, webrtc::AudioDecoderL16>();
 
-        peerConnectionFactoryDependencies.video_encoder_factory = PlatformInterface::SharedInstance()->makeVideoEncoderFactory(_platformContext, true);
-        peerConnectionFactoryDependencies.video_decoder_factory = PlatformInterface::SharedInstance()->makeVideoDecoderFactory(_platformContext);
+        peerConnectionFactoryDependencies.video_encoder_factory = PlatformInterface::SharedInstance()->makeVideoEncoderFactory(true);
+        peerConnectionFactoryDependencies.video_decoder_factory = PlatformInterface::SharedInstance()->makeVideoDecoderFactory();
 
         peerConnectionFactoryDependencies.adm = _audioDeviceModule;
 
@@ -1968,12 +1954,13 @@ public:
                 _videoCapture = nullptr;
                 _screencastCapture = videoCapture;
 
-                if (_outgoingVideoChannel) {
-                    _outgoingVideoChannel->setVideoCapture(nullptr);
-                }
                 if (_outgoingVideoChannelId) {
                     _contentNegotiationContext->removeOutgoingChannel(_outgoingVideoChannelId.value());
                     _outgoingVideoChannelId.reset();
+                }
+                if (_outgoingVideoChannel) {
+                    _outgoingVideoChannel->setVideoCapture(nullptr);
+                    _outgoingVideoChannel.reset();
                 }
 
                 if (_outgoingScreencastChannel) {
@@ -1986,41 +1973,42 @@ public:
                 _videoCapture = videoCapture;
                 _screencastCapture = nullptr;
 
+                if (_outgoingScreencastChannelId) {
+                    _contentNegotiationContext->removeOutgoingChannel(_outgoingScreencastChannelId.value());
+                    _outgoingScreencastChannelId.reset();
+                }
+                if (_outgoingScreencastChannel) {
+                    _outgoingScreencastChannel->setVideoCapture(nullptr);
+                    _outgoingScreencastChannel.reset();
+                }
+
                 if (_outgoingVideoChannel) {
                     _outgoingVideoChannel->setVideoCapture(videoCapture);
                 }
                 if (!_outgoingVideoChannelId) {
                     _outgoingVideoChannelId = _contentNegotiationContext->addOutgoingChannel(signaling::MediaContent::Type::Video);
                 }
-
-                if (_outgoingScreencastChannel) {
-                    _outgoingScreencastChannel->setVideoCapture(nullptr);
-                }
-                if (_outgoingScreencastChannelId) {
-                    _contentNegotiationContext->removeOutgoingChannel(_outgoingScreencastChannelId.value());
-                    _outgoingScreencastChannelId.reset();
-                }
             }
         } else {
             _videoCapture = nullptr;
             _screencastCapture = nullptr;
 
-            if (_outgoingVideoChannel) {
-                _outgoingVideoChannel->setVideoCapture(nullptr);
-            }
-
-            if (_outgoingScreencastChannel) {
-                _outgoingScreencastChannel->setVideoCapture(nullptr);
-            }
-
             if (_outgoingVideoChannelId) {
                 _contentNegotiationContext->removeOutgoingChannel(_outgoingVideoChannelId.value());
                 _outgoingVideoChannelId.reset();
+            }
+            if (_outgoingVideoChannel) {
+                _outgoingVideoChannel->setVideoCapture(nullptr);
+                _outgoingVideoChannel.reset();
             }
 
             if (_outgoingScreencastChannelId) {
                 _contentNegotiationContext->removeOutgoingChannel(_outgoingScreencastChannelId.value());
                 _outgoingScreencastChannelId.reset();
+            }
+            if (_outgoingScreencastChannel) {
+                _outgoingScreencastChannel->setVideoCapture(nullptr);
+                _outgoingScreencastChannel.reset();
             }
         }
 
@@ -2271,7 +2259,6 @@ private:
 
     std::shared_ptr<VideoCaptureInterface> _videoCapture;
     std::shared_ptr<VideoCaptureInterface> _screencastCapture;
-    std::shared_ptr<PlatformContext> _platformContext;
 };
 
 InstanceV2Impl::InstanceV2Impl(Descriptor &&descriptor) {

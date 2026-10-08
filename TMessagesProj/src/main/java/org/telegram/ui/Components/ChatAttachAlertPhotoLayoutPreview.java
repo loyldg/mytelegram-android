@@ -15,6 +15,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PointF;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Region;
@@ -56,6 +57,7 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.MessageDrawable;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ChatActionCell;
 import org.telegram.ui.ChatActivity;
@@ -1216,7 +1218,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
 
             if (draggingCell != null) {
                 canvas.save();
-                Point point = dragTranslate();
+                PointF point = dragTranslate();
                 canvas.translate(point.x, point.y);
                 if (draggingCell.draw(canvas, true)) {
                     invalidate();
@@ -1233,8 +1235,8 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
 
         private float draggingT = 0;
         private float savedDragFromX, savedDragFromY, savedDraggingT;
-        private final Point tmpPoint = new Point();
-        Point dragTranslate() {
+        private final PointF tmpPoint = new PointF();
+        PointF dragTranslate() {
             if (draggingCell == null) {
                 tmpPoint.x = 0;
                 tmpPoint.y = 0;
@@ -1276,7 +1278,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
                 draggingAnimator.cancel();
             }
 
-            Point dragTranslate = dragTranslate();
+            PointF dragTranslate = dragTranslate();
             savedDraggingT = draggingT;
             savedDragFromX = dragTranslate.x;
             savedDragFromY = dragTranslate.y;
@@ -1613,7 +1615,7 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
             if (draggingCell != null) {
                 groupY = 0;
                 RectF drawingRect = draggingCell.rect();
-                Point dragPoint = dragTranslate();
+                PointF dragPoint = dragTranslate();
                 RectF draggingCellXY = new RectF();
                 float cx = dragPoint.x, cy = dragPoint.y;
                 draggingCellXY.set(
@@ -2524,13 +2526,13 @@ public class ChatAttachAlertPhotoLayoutPreview extends ChatAttachAlert.AttachAle
                 return getT() >= 0.95f ? this.groupHeight * maxHeight * getPreviewScale() : measure();
             }
 
-            private RectF buttonTextRect = new RectF();
+            private final RectF buttonTextRect = new RectF();
             private Text buttonText;
             private long buttonTextPrice;
-            private Paint buttonTextBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint buttonTextBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-            private Theme.MessageDrawable messageBackground = (Theme.MessageDrawable) getThemedDrawable(Theme.key_drawable_msgOutMedia);
-            private Theme.MessageDrawable.PathDrawParams backgroundCacheParams = new Theme.MessageDrawable.PathDrawParams();
+            private final MessageDrawable messageBackground = (MessageDrawable) getThemedDrawable(Theme.key_drawable_msgOutMedia);
+            private final MessageDrawable.PathDrawParams backgroundCacheParams = new MessageDrawable.PathDrawParams();
             public boolean draw(Canvas canvas) {
                 boolean update = false;
                 final float t = interpolator.getInterpolation(Math.min(1, (SystemClock.elapsedRealtime() - lastMediaUpdate) / (float) updateDuration));

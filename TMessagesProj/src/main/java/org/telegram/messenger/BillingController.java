@@ -1,6 +1,5 @@
 package org.telegram.messenger;
 
-import static org.telegram.messenger.MessagesController.findUpdates;
 import static org.telegram.messenger.MessagesController.findUpdatesAndRemove;
 
 import android.app.Activity;
@@ -8,7 +7,6 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
-import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -20,24 +18,23 @@ import com.android.billingclient.api.BillingClientStateListener;
 import com.android.billingclient.api.BillingFlowParams;
 import com.android.billingclient.api.BillingResult;
 import com.android.billingclient.api.ConsumeParams;
+import com.android.billingclient.api.PendingPurchasesParams;
 import com.android.billingclient.api.ProductDetails;
-import com.android.billingclient.api.ProductDetailsResponseListener;
 import com.android.billingclient.api.Purchase;
 import com.android.billingclient.api.PurchasesResponseListener;
 import com.android.billingclient.api.PurchasesUpdatedListener;
 import com.android.billingclient.api.QueryProductDetailsParams;
 import com.android.billingclient.api.QueryPurchasesParams;
 
-import org.checkerframework.checker.units.qual.A;
 import org.telegram.messenger.utils.BillingUtilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_update;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.LoginActivity;
 import org.telegram.ui.PremiumPreviewFragment;
-import org.telegram.ui.Stars.StarsController;
 
 import java.text.NumberFormat;
 import java.util.ArrayList;
@@ -82,7 +79,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
 
     private BillingController(Context ctx) {
         billingClient = BillingClient.newBuilder(ctx)
-                .enablePendingPurchases()
+                .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
                 .setListener(this)
                 .build();
     }
@@ -163,7 +160,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
             return;
         }
         billingClientEmpty = true;
-        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.billingProductDetailsUpdated);
+        NotificationCenter.getGlobalInstance().postNotificationNameOnUIThread(NotificationCenter.billingProductDetailsUpdated);
     }
 
     private void switchBackFromInvoice() {
@@ -171,18 +168,23 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
             return;
         }
         billingClientEmpty = false;
-        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.billingProductDetailsUpdated);
+        NotificationCenter.getGlobalInstance().postNotificationNameOnUIThread(NotificationCenter.billingProductDetailsUpdated);
     }
 
     public boolean isReady() {
         return billingClient.isReady();
     }
 
-    public void queryProductDetails(List<QueryProductDetailsParams.Product> products, ProductDetailsResponseListener responseListener) {
+    public interface ProductDetailsResponseListenerLegacy {
+        void onProductDetailsResponse(BillingResult billingResult, List<ProductDetails> list);
+    }
+
+    public void queryProductDetails(List<QueryProductDetailsParams.Product> products, ProductDetailsResponseListenerLegacy responseListener) {
         if (!isReady()) {
             throw new IllegalStateException("Billing: Controller should be ready for this call!");
         }
-        billingClient.queryProductDetailsAsync(QueryProductDetailsParams.newBuilder().setProductList(products).build(), responseListener);
+        billingClient.queryProductDetailsAsync(QueryProductDetailsParams.newBuilder().setProductList(products).build(), (billingResult, queryProductDetailsResult) ->
+            responseListener.onProductDetailsResponse(billingResult, queryProductDetailsResult.getProductDetailsList()));
     }
 
     /**
@@ -372,7 +374,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
                                 FileLog.d("BillingController.onPurchasesUpdatedInternal: " + purchase.getOrderId() + " purchase is purchased and now assigned");
 
                                 if (req.purpose instanceof TLRPC.TL_inputStorePaymentAuthCode) {
-                                    for (TLRPC.TL_updateSentPhoneCode u : findUpdatesAndRemove((TLRPC.Updates) response, TLRPC.TL_updateSentPhoneCode.class)) {
+                                    for (TL_update.TL_updateSentPhoneCode u : findUpdatesAndRemove((TLRPC.Updates) response, TL_update.TL_updateSentPhoneCode.class)) {
                                         AndroidUtilities.runOnUIThread(() -> {
                                             LoginActivity fragment = LaunchActivity.findFragment(LoginActivity.class);
                                             if (fragment == null) {

@@ -10,7 +10,6 @@ import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Vibrator;
@@ -38,8 +37,8 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_forum;
 import org.telegram.tgnet.tl.TL_stars;
+import org.telegram.tgnet.tl.TL_update;
 import org.telegram.ui.ActionBar.ActionBar;
-import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
@@ -167,8 +166,8 @@ public class TopicCreateFragment extends BaseFragment {
                         if (response != null) {
                             TLRPC.Updates updates = (TLRPC.Updates) response;
                             for (int i = 0; i < updates.updates.size(); i++) {
-                                if (updates.updates.get(i) instanceof TLRPC.TL_updateMessageID) {
-                                    TLRPC.TL_updateMessageID updateMessageID = (TLRPC.TL_updateMessageID) updates.updates.get(i);
+                                if (updates.updates.get(i) instanceof TL_update.TL_updateMessageID) {
+                                    TL_update.TL_updateMessageID updateMessageID = (TL_update.TL_updateMessageID) updates.updates.get(i);
                                     TLRPC.TL_messageActionTopicCreate actionMessage = new TLRPC.TL_messageActionTopicCreate();
                                     actionMessage.title = topicName;
                                     TLRPC.TL_messageService message = new TLRPC.TL_messageService();
@@ -296,7 +295,7 @@ public class TopicCreateFragment extends BaseFragment {
             }
         });
         if (topicForEdit == null) {
-            actionBar.createMenu().addItem(CREATE_ID, LocaleController.getString(R.string.Create).toUpperCase());
+            actionBar.createMenu().addItem(CREATE_ID, LocaleController.getString(R.string.Create));
         } else {
             actionBar.createMenu().addItem(EDIT_ID, R.drawable.ic_ab_done);
         }
@@ -340,7 +339,7 @@ public class TopicCreateFragment extends BaseFragment {
         editTextBoldCursor.setHintColor(getThemedColor(Theme.key_chat_messagePanelHint));
         editTextBoldCursor.setTextColor(getThemedColor(Theme.key_chat_messagePanelText));
         editTextBoldCursor.setPadding(dp(0), editTextBoldCursor.getPaddingTop(), dp(0), editTextBoldCursor.getPaddingBottom());
-        editTextBoldCursor.setBackgroundDrawable(null);
+        editTextBoldCursor.setBackground(null);
         editTextBoldCursor.setSingleLine(true);
         editTextBoldCursor.setInputType(editTextBoldCursor.getInputType() | EditorInfo.TYPE_TEXT_FLAG_CAP_SENTENCES);
         editTextContainer.addView(editTextBoldCursor, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, 0, 51, 4, 21, 4));
@@ -617,9 +616,7 @@ public class TopicCreateFragment extends BaseFragment {
     @Override
     public void onResume() {
         super.onResume();
-        editTextBoldCursor.requestFocus();
-        AndroidUtilities.showKeyboard(editTextBoldCursor);
-        AndroidUtilities.requestAdjustResize(getParentActivity(), classGuid);
+        showKeyboard();
     }
 
     public void showKeyboard() {

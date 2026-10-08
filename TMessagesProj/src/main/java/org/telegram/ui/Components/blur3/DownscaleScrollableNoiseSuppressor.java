@@ -19,6 +19,7 @@ import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.utils.RenderNodeEffects;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
+import org.telegram.utils.glass.positions.GlassPositionsArray;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -409,20 +410,20 @@ public class DownscaleScrollableNoiseSuppressor {
             if (isLiquidGlassEnabled) {
                 renderNodesForGlass = new DownscaledRenderNode("glass", 0, true);
                 renderNodesForGlass.setScale(4, 4);
-                renderNodesForGlass.setPrimaryEffectBlur(dpf2(1.66f), RenderNodeEffects.getSaturationX2RenderEffect());
+                renderNodesForGlass.setPrimaryEffectBlur(dpf2(6f), RenderNodeEffects.getSaturationX3RenderEffect());
                 renderNodesForBlur = new DownscaledRenderNode("blur", 0);
                 renderNodesForBlur.setScale(8, 8);
                 renderNodesForBlur.setPrimaryEffectBlur(dpf2(40 - 1.66f));
             } else if (simpleMode) {
                 renderNodesForBlur = new DownscaledRenderNode("blur", 0);
                 renderNodesForBlur.setScale(allowNoiseSuppress ? 16 : 8, allowNoiseSuppress ? 16 : 8);
-                renderNodesForBlur.setPrimaryEffectBlur(dpf2(40), RenderNodeEffects.getSaturationX2RenderEffect());
+                renderNodesForBlur.setPrimaryEffectBlur(dpf2(40), RenderNodeEffects.getSaturationX3RenderEffect());
                 renderNodesForGlass = null;
             } else {
                 renderNodesForBlur = new DownscaledRenderNode("blur", 1);
                 renderNodesForBlur.setScale(8, 8);
                 renderNodesForBlur.setPrimaryEffectBlur(dpf2(40));
-                renderNodesForBlur.setSecondaryEffect(0, RenderNodeEffects.getSaturationX2RenderEffect());
+                renderNodesForBlur.setSecondaryEffect(0, RenderNodeEffects.getSaturationX3RenderEffect());
                 renderNodesForGlass = null;
             }
         }
@@ -459,6 +460,18 @@ public class DownscaleScrollableNoiseSuppressor {
 
     public int getRenderNodesCount() {
         return rectRenderNodesCount;
+    }
+
+    public void setupRenderNodes(GlassPositionsArray positions) {
+        rectRenderNodesCount = positions.size();
+
+        while (rectRenderNodesCount > rectRenderNodes.size()) {
+            rectRenderNodes.add(new SourcePart());
+        }
+
+        for (int a = 0; a < rectRenderNodesCount; a++) {
+            rectRenderNodes.get(a).setPosition(positions.get(a));
+        }
     }
 
     public void setupRenderNodes(List<RectF> positions, int count) {

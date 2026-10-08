@@ -1,6 +1,27 @@
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 
 apply plugin: 'com.android.library'
+apply plugin: 'org.telegram.build-plugin'
+apply plugin: 'idea'
+
+idea {
+    module {
+        excludeDirs += [
+            file('jni/td'),
+            file('jni/third_party/absl'),
+            file('jni/third_party/boringssl'),
+            file('jni/third_party/dav1d'),
+            file('jni/third_party/ffmpeg'),
+            file('jni/third_party/libvpx'),
+            file('jni/third_party/libyuv'),
+            file('jni/third_party/openh264'),
+            file('jni/third_party/xiph'),
+            file('jni/tlottie'),
+            file('jni/voip/webrtc'),
+            file('jni/sqlite')
+        ]
+    }
+}
 
 repositories {
     mavenCentral()
@@ -24,15 +45,19 @@ dependencies {
     implementation "androidx.sharetarget:sharetarget:1.2.0"
     implementation 'androidx.interpolator:interpolator:1.0.0'
     implementation 'androidx.biometric:biometric:1.1.0'
+    implementation 'androidx.webkit:webkit:1.14.0'
 
     implementation 'com.google.android.gms:play-services-cast-framework:21.4.0'
     implementation "androidx.mediarouter:mediarouter:1.7.0"
+    implementation 'com.google.zxing:core:3.5.4'
+
+    implementation 'androidx.car.app:app:1.4.0'
+    implementation 'androidx.car.app:app-projected:1.4.0'
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
     compileOnly 'org.checkerframework:checker-qual:2.5.2'
     compileOnly 'org.checkerframework:checker-compat-qual:2.5.0'
     implementation 'com.google.firebase:firebase-messaging:22.0.0'
-    implementation 'com.google.firebase:firebase-config:21.0.1'
     implementation 'com.google.firebase:firebase-datatransport:18.1.0'
     implementation 'com.google.firebase:firebase-appindexing:20.0.0'
     implementation 'com.google.android.gms:play-services-maps:18.1.0'
@@ -44,7 +69,7 @@ dependencies {
     implementation 'com.googlecode.mp4parser:isoparser:1.0.6'
     implementation 'com.stripe:stripe-android:2.0.2'
     implementation 'com.google.mlkit:language-id:17.0.6'
-    implementation 'com.android.billingclient:billing:7.1.1'
+    implementation 'com.android.billingclient:billing:8.0.0'
     implementation 'com.google.code.gson:gson:2.11.0'
     implementation 'com.google.guava:guava:31.1-android'
     implementation 'com.google.android.play:integrity:1.3.0'
@@ -55,6 +80,22 @@ dependencies {
 
     implementation "androidx.credentials:credentials:1.6.0-alpha04"
     implementation "androidx.credentials:credentials-play-services-auth:1.6.0-alpha04"
+
+    implementation "io.noties.markwon:core:4.6.2"
+    implementation "io.noties.markwon:ext-strikethrough:4.6.2"
+    implementation "io.noties.markwon:ext-tables:4.6.2"
+    implementation "io.noties.markwon:html:4.6.2"
+    implementation "io.noties.markwon:inline-parser:4.6.2"
+    implementation("io.noties.markwon:ext-latex:4.6.2") {
+        exclude group: 'ru.noties', module: 'jlatexmath-android'
+    }
+
+    api project(":TMessagesProj_Modules:media3:media-lib-exoplayer")
+    api project(":TMessagesProj_Modules:media3:media-lib-exoplayer-dash")
+    api project(":TMessagesProj_Modules:media3:media-lib-exoplayer-hls")
+    api project(":TMessagesProj_Modules:media3:media-lib-decoder-ffmpeg")
+    api project(":TMessagesProj_Modules:media3:media-lib-session")
+    api project(':jlatexmath')
 
 //    implementation 'com.google.mlkit:translate:17.0.3'
 
@@ -71,11 +112,10 @@ dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
 }
 
-def isWindows = String.valueOf(DefaultNativePlatform.currentOperatingSystem.toFamilyName() == OperatingSystemFamily.WINDOWS)
 android {
-    compileSdkVersion 35
-    buildToolsVersion '35.0.0'
-    ndkVersion "21.4.7075529" // 26.3.11579264
+    compileSdkVersion 36
+    buildToolsVersion '36.0.0'
+    ndkVersion "27.2.12479018"
 
     sourceSets.main.jniLibs.srcDirs = ['./jni/']
 
@@ -101,7 +141,7 @@ android {
 
     defaultConfig {
         minSdkVersion 21
-        targetSdkVersion 35
+        targetSdkVersion 36
 
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
 
@@ -109,8 +149,9 @@ android {
 
         externalNativeBuild {
             cmake {
-                version '3.10.2'
+                version '3.22.1'
                 arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                targets 'tmessages.49'
             }
         }
     }
@@ -118,99 +159,79 @@ android {
     buildTypes {
         debug {
             jniDebuggable true
-            minifyEnabled false
             shrinkResources false
             multiDexEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), '../TMessagesProj/proguard-rules.pro', '../TMessagesProj/proguard-rules-beta.pro'
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
-            buildConfigField "String", "APP_CENTER_HASH", "\"\""
             buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_PRIVATE_URL") + "\""
             buildConfigField "boolean", "DEBUG_VERSION", "true"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "true"
             buildConfigField "boolean", "BUNDLE", "false"
-            buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
             buildConfigField "int", "VERSION_NUM", "0"
         }
 
         HA_private {
+            matchingFallbacks = ['release']
             jniDebuggable false
-            minifyEnabled true
             multiDexEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), '../TMessagesProj/proguard-rules.pro', '../TMessagesProj/proguard-rules-beta.pro'
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
-            buildConfigField "String", "APP_CENTER_HASH", "\"" + getProps("APP_CENTER_HASH_PRIVATE") + "\""
             buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_PRIVATE_URL") + "\""
             buildConfigField "boolean", "DEBUG_VERSION", "true"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "true"
             buildConfigField "boolean", "BUNDLE", "false"
-            buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
             buildConfigField "int", "VERSION_NUM", "1"
         }
 
         HA_public {
+            matchingFallbacks = ['release']
             jniDebuggable false
-            minifyEnabled true
             multiDexEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), '../TMessagesProj/proguard-rules.pro', '../TMessagesProj/proguard-rules-beta.pro'
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
-            buildConfigField "String", "APP_CENTER_HASH", "\"" + getProps("APP_CENTER_HASH_PUBLIC") + "\""
             buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_PUBLIC_URL") + "\""
             buildConfigField "boolean", "DEBUG_VERSION", "true"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUNDLE", "false"
-            buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
             buildConfigField "int", "VERSION_NUM", "4"
         }
 
         HA_hardcore {
+            matchingFallbacks = ['release']
             jniDebuggable false
-            minifyEnabled true
             multiDexEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), '../TMessagesProj/proguard-rules.pro', '../TMessagesProj/proguard-rules-beta.pro'
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
-            buildConfigField "String", "APP_CENTER_HASH", "\"" + getProps("APP_CENTER_HASH_HARDCORE") + "\""
             buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_HARDCORE_URL") + "\""
             buildConfigField "boolean", "DEBUG_VERSION", "true"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "true"
             buildConfigField "boolean", "BUNDLE", "false"
-            buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
             buildConfigField "int", "VERSION_NUM", "5"
         }
 
         standalone {
+            matchingFallbacks = ['release']
             jniDebuggable false
-            minifyEnabled true
             multiDexEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), '../TMessagesProj/proguard-rules.pro'
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
-            buildConfigField "String", "APP_CENTER_HASH", "\"\""
             buildConfigField "String", "BETA_URL", "\"\""
             buildConfigField "boolean", "DEBUG_VERSION", "false"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUNDLE", "false"
-            buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
             buildConfigField "int", "VERSION_NUM", "6"
         }
 
         release {
             jniDebuggable false
-            minifyEnabled true
             shrinkResources false
             multiDexEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), '../TMessagesProj/proguard-rules.pro'
             ndk.debugSymbolLevel = 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
-            buildConfigField "String", "APP_CENTER_HASH", "\"\""
             buildConfigField "String", "BETA_URL", "\"\""
             buildConfigField "boolean", "DEBUG_VERSION", "false"
             buildConfigField "boolean", "DEBUG_PRIVATE_VERSION", "false"
             buildConfigField "boolean", "BUNDLE", "false"
-            buildConfigField "boolean", "BUILD_HOST_IS_WINDOWS", isWindows
             buildConfigField "int", "VERSION_NUM", "7"
         }
     }

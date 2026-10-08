@@ -1,9 +1,14 @@
 package org.telegram.ui;
 
+import static org.telegram.messenger.AndroidUtilities.dpf2;
+
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Path;
 import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
@@ -24,9 +29,8 @@ public abstract class ViewPagerActivity extends BaseFragment {
     protected final SparseArray<FragmentState> fragmentsArr = new SparseArray<>();
 
     protected FrameLayout contentView;
-    protected ViewPagerFixed viewPager;
+    protected ViewPagerActivityPagerLayout viewPager;
     private int initialFragmentPosition = -1;
-
 
     abstract protected int getStartPosition();
 
@@ -53,48 +57,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
         hasOwnBackground = true;
         contentView = createContentView(context);
 
-        viewPager = new ViewPagerFixed(context) {
-            @Override
-            protected void onScrollEnd() {
-                super.onScrollEnd();
-                onViewPagerScrollEnd();
-                checkFragmentsVisibility();
-            }
-
-            @Override
-            protected float getAvailableTranslationX() {
-                return getMeasuredWidth();
-            }
-
-            @Override
-            protected void onItemSelected(View currentPage, View oldPage, int position, int oldPosition) {
-                super.onItemSelected(currentPage, oldPage, position, oldPosition);
-                checkFragmentsVisibility();
-            }
-
-            @Override
-            public void onTabAnimationUpdate(boolean manual) {
-                super.onTabAnimationUpdate(manual);
-                onViewPagerTabAnimationUpdate(manual);
-                checkFragmentsVisibility();
-                checkSystemBarColors();
-            }
-
-            @Override
-            protected boolean canScrollBackward(MotionEvent e) {
-                return ViewPagerActivity.this.canScrollBackward(e);
-            }
-
-            @Override
-            protected boolean canScrollForward(MotionEvent e) {
-                return ViewPagerActivity.this.canScrollForward(e);
-            }
-
-            @Override
-            protected long getManualScrollDuration() {
-                return 320L;
-            }
-        };
+        viewPager = new ViewPagerActivityPagerLayout(context);
 
         if (initialFragmentPosition == -1) {
             initialFragmentPosition = getStartPosition();
@@ -108,7 +71,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
 
             @Override
             public View createView(int viewType) {
-                return new FrameLayout(context);
+                return new ViewPagerFragmentRootLayout(context);
             }
 
             @Override
@@ -131,7 +94,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
 
                 fragment.setParentLayout(getParentLayout());
                 if (fragment.getFragmentView() == null) {
-                    fragment.createView(context);
+                    fragment.performCreateView(context);
                     fragment.setTitleOverlayText(titleOverlay, titleOverlayId, titleOverlayAction);
                 }
 
@@ -155,7 +118,6 @@ public abstract class ViewPagerActivity extends BaseFragment {
                 checkFragmentsVisibility();
             }
         });
-
 
         contentView.addView(viewPager, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
@@ -359,6 +321,19 @@ public abstract class ViewPagerActivity extends BaseFragment {
         fragmentsArr.remove(position);
     }
 
+    @Override
+    public void onFragmentDestroy() {
+        super.onFragmentDestroy();
+        for (int a = 0, N = fragmentsArr.size(); a < N; a++) {
+            final FragmentState state = fragmentsArr.valueAt(a);
+            if (state.onCreateCalled) {
+                state.fragment.onFragmentDestroy();
+                state.fragment.setParentLayout(null);
+            }
+        }
+        fragmentsArr.clear();
+    }
+
     private String titleOverlay;
     private int titleOverlayId;
     private Runnable titleOverlayAction;
@@ -436,6 +411,95 @@ public abstract class ViewPagerActivity extends BaseFragment {
 
         private FragmentState(@NonNull BaseFragment fragment) {
             this.fragment = fragment;
+        }
+    }
+
+    public class ViewPagerActivityPagerLayout extends ViewPagerFixed {
+
+        public ViewPagerActivityPagerLayout(@NonNull Context context) {
+            super(context);
+        }
+
+        private boolean tabletLayout;
+        public void setTabletLayout(boolean tabletLayout) {
+            if (this.tabletLayout == tabletLayout) return;
+            this.tabletLayout = tabletLayout;
+            invalidate();
+        }
+
+        private final Path clipPath = new Path();
+
+        @Override
+        protected void dispatchDraw(@NonNull Canvas canvas) {
+            if (tabletLayout) {
+                clipPath.rewind();
+                final float r = dpf2(24);
+                AndroidUtilities.rectTmp.set(0, AndroidUtilities.statusBarHeight, getWidth(), getHeight());
+                clipPath.addRoundRect(AndroidUtilities.rectTmp, r, r, Path.Direction.CW);
+                canvas.save();
+                canvas.clipPath(clipPath);
+            }
+            super.dispatchDraw(canvas);
+            if (tabletLayout) {
+                canvas.restore();
+            }
+        }
+
+        @Override
+        protected void onScrollEnd() {
+            super.onScrollEnd();
+            onViewPagerScrollEnd();
+            checkFragmentsVisibility();
+        }
+
+        @Override
+        protected float getAvailableTranslationX() {
+            return getMeasuredWidth();
+        }
+
+        @Override
+        protected void onItemSelected(View currentPage, View oldPage, int position, int oldPosition) {
+            super.onItemSelected(currentPage, oldPage, position, oldPosition);
+            checkFragmentsVisibility();
+        }
+
+        @Override
+        public void onTabAnimationUpdate(boolean manual) {
+            super.onTabAnimationUpdate(manual);
+            onViewPagerTabAnimationUpdate(manual);
+            checkFragmentsVisibility();
+            checkSystemBarColors();
+        }
+
+        @Override
+        protected boolean canScrollBackward(MotionEvent e) {
+            return ViewPagerActivity.this.canScrollBackward(e);
+        }
+
+        @Override
+        protected boolean canScrollForward(MotionEvent e) {
+            return ViewPagerActivity.this.canScrollForward(e);
+        }
+
+        @Override
+        protected long getManualScrollDuration() {
+            return 320L;
+        }
+
+        @Override
+        public void setLayoutParams(ViewGroup.LayoutParams params) {
+            super.setLayoutParams(params);
+        }
+
+        @Override
+        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+            super.onLayout(changed, left, top, right, bottom);
+        }
+    }
+
+    private static class ViewPagerFragmentRootLayout extends FrameLayout {
+        public ViewPagerFragmentRootLayout(@NonNull Context context) {
+            super(context);
         }
     }
 }

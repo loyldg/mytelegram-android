@@ -643,6 +643,13 @@ public class StickerCategoriesListView extends RecyclerListView {
 
         public void set(EmojiCategory category, int index, boolean selected) {
             this.index = index;
+            if (!TextUtils.isEmpty(category.title)) {
+                setContentDescription(category.title);
+            } else if (!TextUtils.isEmpty(category.emojis)) {
+                setContentDescription(category.emojis);
+            } else {
+                setContentDescription(null);
+            }
             if (loadAnimator != null) {
                 loadAnimator.cancel();
                 loadAnimator = null;
@@ -754,7 +761,7 @@ public class StickerCategoriesListView extends RecyclerListView {
 
         public void setImageColor(int color) {
             if (imageColor != color) {
-                setColorFilter(new PorterDuffColorFilter(imageColor = color, PorterDuff.Mode.MULTIPLY));
+                setColorFilter(new PorterDuffColorFilter(imageColor = color, PorterDuff.Mode.SRC_IN));
             }
         }
 

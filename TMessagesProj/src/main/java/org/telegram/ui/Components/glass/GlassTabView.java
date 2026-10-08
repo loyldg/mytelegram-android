@@ -19,6 +19,7 @@ import android.view.Gravity;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.RawRes;
 import androidx.annotation.StringRes;
@@ -131,6 +132,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
 
     private boolean hasGestureSelectedOverride;
     private float gestureSelectedOverride;
+    private boolean skipDrawSelector;
 
     public void setGestureSelectedOverride(float gestureSelectedOverride, boolean allow) {
         this.gestureSelectedOverride = gestureSelectedOverride;
@@ -138,11 +140,18 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         invalidate();
     }
 
+    public void setSkipDrawSelector(boolean skipDrawSelector) {
+        if (this.skipDrawSelector != skipDrawSelector) {
+            this.skipDrawSelector = skipDrawSelector;
+            invalidate();
+        }
+    }
+
     @Override
     protected void dispatchDraw(@NonNull Canvas canvas) {
         final float viewWidth = hasVisualWidth ? visualWidth : getWidth();
         final float selectedFactor = hasGestureSelectedOverride ? gestureSelectedOverride : isSelectedAnimator.getFloatValue();
-        if (selectedFactor > 0) {
+        if (selectedFactor > 0 && !skipDrawSelector) {
             final float alpha = AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(selectedFactor);
 
             paintCounterBackground.setColor(Theme.multAlpha(colorSelected, 0.09f * alpha));
@@ -228,7 +237,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         textView.setTypeface(selected ? AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_EXTRA_BOLD) : AndroidUtilities.bold());
     }
 
-    public boolean isSelected() {
+    public boolean isTabSelected() {
         return isSelectedAnimator.getValue();
     }
 
@@ -298,6 +307,12 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         }
 
         if (tabAnimation == null) {
+            return;
+        }
+
+        if (tabAnimation.iconStatic != -1) {
+            imageView.setImageResource(tabAnimation.iconStatic);
+            updateColors();
             return;
         }
 
@@ -502,6 +517,30 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         return defaultTextPaint.measureText(textView.getText().toString());
     }
 
+    private TextPaint scaledTextPaint;
+
+    @Override
+    public float measureTextWidth(float textSizeDp) {
+        if (scaledTextPaint == null) {
+            scaledTextPaint = new TextPaint(defaultTextPaint);
+        }
+        scaledTextPaint.setTextSize(dp(textSizeDp));
+        return scaledTextPaint.measureText(textView.getText().toString());
+    }
+
+    @Override
+    public void setTextSizeDp(float textSizeDp) {
+        final float px = dp(textSizeDp);
+        if (textView.getTextSize() != px) {
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, textSizeDp);
+            defaultTextPaint.setTextSize(px);
+        }
+    }
+
+    private enum TabAnimationType {
+        LOTTIE,
+        STATIC
+    }
 
     public enum TabAnimation {
         CONTACTS(R.raw.tab_contacts),
@@ -523,12 +562,15 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         SYMBOLS(R.raw.tab_symbols, R.raw.tab_symbols_reverse),
         REPLIES(R.raw.tab_reply, R.raw.tab_reply_reverse),
         WALLET(R.raw.tab_wallet, R.raw.tab_wallet_reverse),
+        LINK(TabAnimationType.STATIC, R.drawable.tabs_link_24),
+        ARTICLE(R.raw.tab_article, R.raw.tab_article_reverse),
 
         BOOSTS(R.raw.boosts, 25, 49),
         MONETIZATION(R.raw.monetize, 19, 45);
 
         public final @RawRes int iconToFilled;
         public final @RawRes int iconToOutline;
+        public final @DrawableRes int iconStatic;
         public final int endFrameMid, endFrameEnd;
 
         TabAnimation(int iconRes, int endFrameMid, int endFrameEnd) {
@@ -536,6 +578,21 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
             this.iconToOutline = iconRes;
             this.endFrameMid = endFrameMid;
             this.endFrameEnd = endFrameEnd;
+            this.iconStatic = -1;
+        }
+
+        TabAnimation(TabAnimationType type, int icon) {
+            if (type == TabAnimationType.LOTTIE) {
+                this.iconToFilled = icon;
+                this.iconToOutline = icon;
+                this.iconStatic = -1;
+            } else {
+                this.iconStatic = icon;
+                this.iconToFilled = -1;
+                this.iconToOutline = -1;
+            }
+            this.endFrameMid = -1;
+            this.endFrameEnd = -1;
         }
 
         TabAnimation(int iconRes) {
@@ -543,6 +600,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
             this.iconToOutline = iconRes;
             this.endFrameMid = -1;
             this.endFrameEnd = -1;
+            this.iconStatic = -1;
         }
 
         TabAnimation(int iconToFilled, int iconToOutline) {
@@ -550,6 +608,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
             this.iconToOutline = iconToOutline;
             this.endFrameMid = -1;
             this.endFrameEnd = -1;
+            this.iconStatic = -1;
         }
     }
 

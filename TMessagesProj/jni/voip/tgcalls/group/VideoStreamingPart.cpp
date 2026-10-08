@@ -372,7 +372,9 @@ public:
     
     ~VideoStreamingDecoderState() {
         if (_codecContext) {
+            #if LIBAVFORMAT_VERSION_MAJOR < 59
             avcodec_close(_codecContext);
+            #endif
             avcodec_free_context(&_codecContext);
         }
         if (_codecParameters) {
@@ -843,8 +845,8 @@ public:
         }
     }
     
-    bool hasRemainingFrames() {
-        return !_parsedVideoParts.empty() || getAudioRemainingMilliseconds() > 0;
+    bool hasRemainingFrames() const {
+        return !_parsedVideoParts.empty() || !_parsedAudioParts.empty();
     }
 
     int getAudioRemainingMilliseconds() {

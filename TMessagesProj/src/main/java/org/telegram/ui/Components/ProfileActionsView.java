@@ -756,6 +756,7 @@ public class ProfileActionsView extends View {
                 } else {
                     insertIfAvailable(out, KEY_VOICE_CHAT);
                     insertIfNotAvailable(out, KEY_STREAM, KEY_VOICE_CHAT);
+                    insertIfAvailable(out, KEY_STORY);
                     insertIfAvailable(out, KEY_LEAVE);
                 }
                 break;
@@ -1197,8 +1198,7 @@ public class ProfileActionsView extends View {
         @SuppressLint("UseCompatLoadingForDrawables")
         public void updateDrawable(@RawRes int animatedRes, @DrawableRes int filledRes, @DrawableRes int outlineRes) {
             if (animatedRes != 0) {
-                RLottieDrawable drawable = new RLottieDrawable(animatedRes, String.valueOf(animatedRes),
-                    dp(56), dp(56), false, null);
+                RLottieDrawable drawable = new RLottieDrawable(animatedRes, dp(56), dp(56), false, null);
                 drawable.setMasterParent(ProfileActionsView.this);
                 drawable.start();
                 drawableAnimated = drawable;

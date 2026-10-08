@@ -478,7 +478,7 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
             ContactsController.getInstance(currentAccount).loadPrivacySettings();
         }
         if (rulesType == PRIVACY_RULES_TYPE_PHOTO) {
-            imageUpdater = new ImageUpdater(false, ImageUpdater.FOR_TYPE_USER, true);
+            imageUpdater = new ImageUpdater(true, ImageUpdater.FOR_TYPE_USER, true);
             imageUpdater.parentFragment = this;
             imageUpdater.setDelegate(this);
             TLRPC.UserFull userFull = getMessagesController().getUserFull(getUserConfig().clientUserId);
@@ -1780,7 +1780,7 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
                     }
                     setAvatarCell.setBackgroundDrawable(Theme.getSelectorDrawable(false));
                     setAvatarCell.setColors(Theme.key_windowBackgroundWhiteBlueIcon, Theme.key_windowBackgroundWhiteBlueButton);
-                    cameraDrawable = new RLottieDrawable(R.raw.camera_outline, "" + R.raw.camera_outline, dp(50), dp(50), false, null);
+                    cameraDrawable = new RLottieDrawable(R.raw.camera_outline, dp(50), dp(50), false, null);
                     setAvatarCell.imageView.setTranslationX(-dp(8));
                     setAvatarCell.imageView.setAnimation(cameraDrawable);
                     view = setAvatarCell;

@@ -1659,8 +1659,44 @@ public class DatabaseMigrationHelper {
             database.executeFast("DROP INDEX IF EXISTS last_mid_idx_dialogs;").stepThis().dispose();
             database.executeFast("DROP INDEX IF EXISTS folder_id_idx_dialogs;").stepThis().dispose();
             database.executeFast("DROP INDEX IF EXISTS flags_idx_dialogs;").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 173").stepThis().dispose();
 
             version = 173;
+        }
+        if (version == 173) {
+            database.executeFast("CREATE TABLE web_browser_settings(data BLOB)").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 174").stepThis().dispose();
+            version = 174;
+        }
+        if (version == 174) {
+            database.executeFast("CREATE INDEX IF NOT EXISTS uid_type_date_mid_idx_media_v4 ON media_v4(uid, type, date DESC, mid DESC);").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 175").stepThis().dispose();
+            version = 175;
+        }
+        if (version == 175) {
+            database.executeFast("CREATE TABLE ephemeral_messages (id INTEGER, dialog_id INTEGER, topic_id INTEGER, date INTEGER, data BLOB, PRIMARY KEY(dialog_id, id));").stepThis().dispose();
+            database.executeFast("CREATE INDEX IF NOT EXISTS ephemeral_messages_date_idx ON ephemeral_messages(date);").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 176").stepThis().dispose();
+            version = 176;
+        }
+        if (version == 176) {
+            database.executeFast("CREATE TABLE welcome_messages(mid INTEGER, dialog_id INTEGER, send_state INTEGER, date INTEGER, data BLOB, ttl INTEGER, replydata BLOB, reply_to_message_id INTEGER, PRIMARY KEY(mid, dialog_id))").stepThis().dispose();
+            database.executeFast("CREATE INDEX IF NOT EXISTS send_state_idx_welcome_messages ON welcome_messages(mid, send_state, date);").stepThis().dispose();
+            database.executeFast("CREATE INDEX IF NOT EXISTS dialog_date_idx_welcome_messages ON welcome_messages(dialog_id, date);").stepThis().dispose();
+            database.executeFast("CREATE INDEX IF NOT EXISTS reply_to_idx_welcome_messages ON welcome_messages(mid, reply_to_message_id);").stepThis().dispose();
+            database.executeFast("CREATE INDEX IF NOT EXISTS idx_to_reply_welcome_messages ON welcome_messages(reply_to_message_id, mid);").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 177").stepThis().dispose();
+            version = 177;
+        }
+        if (version == 177) {
+            database.executeFast("CREATE INDEX IF NOT EXISTS media_v4_music_browse_idx ON media_v4(uid, date DESC, mid DESC) WHERE type = 4 AND mid > 0 AND uid != 0;").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 178").stepThis().dispose();
+            version = 178;
+        }
+        if (version == 178) {
+            database.executeFast("DELETE FROM downloading_documents").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 179").stepThis().dispose();
+            version = 179;
         }
 
         return version;

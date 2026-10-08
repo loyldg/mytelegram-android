@@ -17,7 +17,7 @@ import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.DefaultItemAnimator;
-import androidx.recyclerview.widget.LinearSmoothScrollerCustom;
+import org.telegram.ui.recyclerview.LinearSmoothScrollerCustom;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
@@ -655,7 +655,7 @@ public class SelectorBottomSheet extends BottomSheetWithRecyclerListView {
         }
     }
 
-    private boolean matchLocal(TLObject obj, String q) {
+    public static boolean matchLocal(TLObject obj, String q) {
         if (TextUtils.isEmpty(q)) {
             return true;
         }

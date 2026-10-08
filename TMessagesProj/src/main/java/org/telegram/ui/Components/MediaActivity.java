@@ -723,7 +723,7 @@ public class MediaActivity extends BaseFragment implements SharedMediaLayout.Sha
         };
         sharedMediaLayout.scrollSlidingTextTabStrip.setOpen(true);
         if (sharedMediaLayout.getSearchOptionsItem() != null) {
-            sharedMediaLayout.getSearchOptionsItem().setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.MULTIPLY));
+            sharedMediaLayout.getSearchOptionsItem().setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
         }
         sharedMediaLayout.setPinnedToTop(true);
         sharedMediaLayout.getSearchItem().setTranslationY(0);
@@ -807,7 +807,7 @@ public class MediaActivity extends BaseFragment implements SharedMediaLayout.Sha
             }
         }
 
-        final ImageLocation thumbLocation = ImageLocation.getForUserOrChat(avatarObject, ImageLocation.TYPE_SMALL);
+        final ImageLocation thumbLocation = ImageLocation.getForUserOrChat(currentAccount, avatarObject, ImageLocation.TYPE_SMALL);
         avatarImageView.setImage(thumbLocation, "50_50", avatarDrawable, avatarObject);
 
         if (nameTextView[0] != null && TextUtils.isEmpty(nameTextView[0].getText())) {
@@ -1067,7 +1067,7 @@ public class MediaActivity extends BaseFragment implements SharedMediaLayout.Sha
 
     private void updateColors() {
         if (sharedMediaLayout.getSearchOptionsItem() != null) {
-            sharedMediaLayout.getSearchOptionsItem().setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.MULTIPLY));
+            sharedMediaLayout.getSearchOptionsItem().setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
         }
         actionBar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
         actionBar.setItemsColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), false);
